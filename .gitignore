@@ -1,0 +1,30 @@
+# ===== 本机工具数据 =====
+# WorkBuddy 的记忆与工作日志，不属于项目源码，不进版本库
+.workbuddy/
+
+# ===== 透明过程日志 =====
+# 安装 / 环境探测过程记录，留档备查，不进版本库
+_logs/
+
+# ===== 本地配置与密钥文件 =====
+# 本地环境变量文件可能包含数据库密码或 API 密钥
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# ===== 依赖目录 =====
+node_modules/
+.pnpm-store/
+
+# ===== 本地数据库文件 =====
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
