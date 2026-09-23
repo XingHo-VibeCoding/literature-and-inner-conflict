@@ -1,0 +1,121 @@
+{
+  "catalogVersion": "2026-09-23.2",
+  "situationTags": [
+    {"id": "rethink-life", "label": "正在重新思考怎样生活"},
+    {"id": "relationship-confusion", "label": "在人际关系中感到困惑"},
+    {"id": "beyond-the-self", "label": "觉得困扰不只来自自己"}
+  ],
+  "directionTags": [
+    {"id": "review-choices", "label": "重新审视生活中的重要选择"},
+    {"id": "simpler-life", "label": "尝试更简朴的生活"},
+    {"id": "social-perspective", "label": "从社会背景理解经历"}
+  ],
+  "books": [
+    {
+      "id": "tao-yuanming-collection",
+      "title": "陶渊明集",
+      "author": "陶渊明（陶潜）",
+      "categories": ["literature"],
+      "literaryForms": ["诗歌", "散文"],
+      "intro": "收录陶渊明的诗文。其田园诗以自然与日常生活为重要题材，呈现崇尚自然、率性真意的文学风貌。资料来源介绍了国家图书馆所藏的陶集宋本。",
+      "topics": ["田园与日常生活", "自然与真意", "生活选择与价值追求"],
+      "sources": [{"name": "国家图书馆：宋本陶渊明集二种介绍", "url": "https://www.nlc.cn/pcab/zx/xw/20210521_201797.shtml"}],
+      "displayOrder": 1,
+      "situationMatches": [
+        {"tagId": "rethink-life", "basis": "陶渊明以田园日常和自然表达生活中的价值追求，可与你重新思考怎样生活的处境相互参照。"}
+      ],
+      "directionMatches": [
+        {"tagId": "review-choices", "basis": "作品对自然与真意的重视提供一种价值参照，可以带着“哪些选择更贴近自己的想法”这个问题阅读。"},
+        {"tagId": "simpler-life", "basis": "田园日常与平淡生活是作品的重要题材，可以借此留意简单日常中自己珍视的事物，思考想保留怎样的生活。"}
+      ]
+    },
+    {
+      "id": "walden",
+      "title": "瓦尔登湖",
+      "author": "亨利·戴维·梭罗",
+      "categories": ["literature", "philosophy"],
+      "literaryForms": ["散文"],
+      "intro": "梭罗以瓦尔登湖畔的生活为素材，写下建屋、种植与观察自然等经历，并思考简朴生活、个人需要和社会惯习。这是一份生活记录，也是一场关于如何生活的探索。",
+      "topics": ["简朴生活与个人需要", "自主选择与社会惯习", "人与自然"],
+      "sources": [{"name": "Penguin Random House：Walden 作品资料（Library of America 版）", "url": "https://www.penguinrandomhouse.com/books/469576/walden-by-henry-david-thoreau/"}],
+      "displayOrder": 2,
+      "situationMatches": [
+        {"tagId": "rethink-life", "basis": "梭罗从建屋、种植和观察自然等日常经历出发，讨论个人需要与社会惯习，与重新思考生活安排的处境相连。"}
+      ],
+      "directionMatches": [
+        {"tagId": "review-choices", "basis": "书中对个人需要与社会惯习的思考，可作为审视生活选择的参照：哪些安排来自自己的需要，哪些来自惯习？"},
+        {"tagId": "simpler-life", "basis": "书中对简朴生活的探索提供阅读参照，可以带着“哪些开支和安排确有必要”这个问题，重新考虑自己的日常。"}
+      ]
+    },
+    {
+      "id": "analects",
+      "title": "论语",
+      "author": "孔子弟子及再传弟子编纂",
+      "categories": ["philosophy"],
+      "literaryForms": [],
+      "intro": "主要记录孔子及其弟子的言行，以语录和对话呈现关于学习、伦理、教育与政治的思考。作品由弟子及再传弟子编纂，并非孔子亲笔撰写的专著。",
+      "topics": ["学习与自我修养", "伦理与人际关系", "教育与实践"],
+      "sources": [{"name": "商务印书馆：《论语》内容与编纂介绍", "url": "https://www.cp.com.cn/book/4f50a99f-0.html"}],
+      "displayOrder": 3,
+      "situationMatches": [
+        {"tagId": "rethink-life", "basis": "书中关于学习、修养和伦理实践的讨论，为思考怎样生活提供一组可以对照的问题。"},
+        {"tagId": "relationship-confusion", "basis": "孔子及弟子的对话涉及伦理与人际关系，可作为理解相处中的行为和责任的参照；具体经历仍需由你判断。"}
+      ],
+      "directionMatches": [
+        {"tagId": "review-choices", "basis": "关于学习、修养与伦理的讨论，可以帮助你提出阅读问题：自己的选择体现了怎样的原则，怎样落实在行为中？"}
+      ]
+    },
+    {
+      "id": "meditations",
+      "title": "沉思录",
+      "author": "马可·奥勒留",
+      "categories": ["philosophy"],
+      "literaryForms": [],
+      "intro": "马可·奥勒留写给自己的反思与自我提醒，涉及人的生活、行为与哲学思考。这些札记与斯多葛哲学相关，呈现作者在现实生活中不断审视自身的过程。",
+      "topics": ["自省与自我提醒", "伦理与日常行为", "生命与死亡"],
+      "sources": [{"name": "牛津大学出版社：《沉思录》研究介绍（R. B. Rutherford，非作品全文）", "url": "https://academic.oup.com/book/55052"}],
+      "displayOrder": 4,
+      "situationMatches": [
+        {"tagId": "rethink-life", "basis": "这些写给自己的札记把哲学思考与现实生活相连，可与你正在反思生活方式的处境相互参照。"}
+      ],
+      "directionMatches": [
+        {"tagId": "review-choices", "basis": "作者以自我提醒反复审视行为，你可以从中提出自己的阅读问题：做决定时希望遵循什么原则？"}
+      ]
+    },
+    {
+      "id": "from-the-soil",
+      "title": "乡土中国",
+      "author": "费孝通",
+      "categories": ["humanities-social-sciences"],
+      "literaryForms": [],
+      "intro": "费孝通对中国传统基层社会结构的分析，通过差序格局、礼治秩序、血缘和地缘等概念，讨论社会关系如何组织人们的生活。它分析的是乡土社会的结构，不是对所有当代关系的直接判断。",
+      "topics": ["差序格局与人际关系", "礼治秩序", "血缘、地缘与社会生活"],
+      "sources": [{"name": "商务印书馆：《乡土中国》内容介绍与目录", "url": "https://www.cp.com.cn/book/bcd784dd-4.html"}],
+      "displayOrder": 5,
+      "situationMatches": [
+        {"tagId": "relationship-confusion", "basis": "作品讨论差序格局、礼治秩序等关系结构，可为相处中的困惑提供社会视角；传统乡土概念需要结合当下差异理解。"},
+        {"tagId": "beyond-the-self", "basis": "费孝通从社会关系与秩序分析生活，为“困扰可能不只来自个人”的感受提供一个社会结构的观察角度，不直接断定你的处境。"}
+      ],
+      "directionMatches": [
+        {"tagId": "social-perspective", "basis": "可以借助作品中的关系与秩序概念，询问经历中有哪些群体规则和关系期待，同时辨别乡土社会与自己环境的差异。"}
+      ]
+    },
+    {
+      "id": "sociological-imagination",
+      "title": "社会学的想象力",
+      "author": "C. 赖特·米尔斯",
+      "categories": ["humanities-social-sciences"],
+      "literaryForms": [],
+      "intro": "米尔斯反思社会学研究的方向，提出将私人困扰与社会结构联系起来理解。作品提供了把个人经历放回社会背景中考察的视角，帮助读者提出超出个人层面的社会问题。",
+      "topics": ["私人困扰与公共问题", "个人经历与社会结构", "社会学的观察方式"],
+      "sources": [{"name": "北京大学出版社旗舰店：《社会学的想象力》内容介绍", "url": "https://detail.youzan.com/show/goods?alias=1ycmwgzxho5cvi2&from_source=gbox_seo"}],
+      "displayOrder": 6,
+      "situationMatches": [
+        {"tagId": "beyond-the-self", "basis": "米尔斯把私人困扰与社会结构联系起来，与你觉得困扰不只来自自己的选择相呼应，提供一个进一步观察的角度。"}
+      ],
+      "directionMatches": [
+        {"tagId": "social-perspective", "basis": "作品提供把个人经历放回社会背景中考察的视角，可以带着“还有哪些共同条件影响这段经历”这个问题阅读。"}
+      ]
+    }
+  ]
+}

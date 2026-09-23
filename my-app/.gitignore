@@ -1,0 +1,7 @@
+# 本地依赖、构建产物和临时配置不提交。
+node_modules/
+dist/
+*.local
+.env
+.env.*
+_logs/

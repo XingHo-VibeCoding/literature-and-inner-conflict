@@ -1,0 +1,23 @@
+{
+  "name": "literature-inner-conflict",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "文学与内心冲突的本地页面骨架",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host localhost --port 4173 --strictPort"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "8.3.0"
+  }
+}
