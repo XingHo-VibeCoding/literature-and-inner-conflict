@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import JournalPage from './pages/JournalPage.jsx';
 import BooksPage from './pages/BooksPage.jsx';
+import HomePage from './pages/HomePage.jsx';
 import { getBook, getRecommendationContext } from './services/catalog.js';
 
 const sections = {
@@ -115,37 +116,19 @@ export default function App() {
   }, [isHome, section, detailTitle]);
 
   return (
-    <div className="app-shell" onClick={handleLinkClick}>
+    <div className={`app-shell${isHome ? ' home-shell' : ''}`} onClick={handleLinkClick}>
       <header className="site-header">
-        <a className="brand" href="#/">文学与内心冲突</a>
-        <span className="stage-label">本地记录版</span>
+        <a className="brand" href="#/">
+          {isHome && <span className="home-brand-mark" aria-hidden="true">文</span>}
+          文学与内心冲突
+        </a>
+        <span className="stage-label">{isHome ? '记录 · 阅读 · 回看' : '本地记录版'}</span>
       </header>
 
       <main>
         {navigationMessage && <p role="status">{navigationMessage}</p>}
         {isHome ? (
-          <>
-            <section className="introduction" aria-labelledby="home-title">
-              <p className="eyebrow">记录 · 阅读 · 回看</p>
-              <h1 id="home-title">文学与内心冲突</h1>
-              <p className="intro-text">
-                留下日精进中的想法与行动，在文学、哲学和人文社科作品中，
-                寻找与自己相照的经历，以及理解生活的新视角。
-              </p>
-            </section>
-
-            <nav className="entry-grid" aria-label="两个主入口">
-              {Object.entries(sections).map(([route, item], index) => (
-                <a className="entry-card" href={`#${route}`} key={route} aria-label={item.title}>
-                  <span className="entry-number" aria-hidden="true">0{index + 1}</span>
-                  <h2>{item.title}</h2>
-                  <p>{item.description}</p>
-                  <span className="entry-action" aria-hidden="true">进入查看 →</span>
-                </a>
-              ))}
-            </nav>
-            <p className="scope-note">日精进可在当前浏览器保存、回看、修改与删除；书单支持两类推荐、作品收藏与阅读备注。</p>
-          </>
+          <HomePage />
         ) : (
           <section className="section-page" aria-labelledby="section-title">
             <a className="back-link" href="#/">← 返回首页</a>
