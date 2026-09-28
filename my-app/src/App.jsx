@@ -116,10 +116,10 @@ export default function App() {
   }, [isHome, section, detailTitle]);
 
   return (
-    <div className={`app-shell${isHome ? ' home-shell' : ''}`} onClick={handleLinkClick}>
+    <div className={`app-shell${isHome ? ' home-shell' : path === '/journal' ? ' journal-shell' : isBooks ? ' books-shell' : ''}`} onClick={handleLinkClick}>
       <header className="site-header">
         <a className="brand" href="#/">
-          {isHome && <span className="home-brand-mark" aria-hidden="true">文</span>}
+          {(isHome || path === '/journal' || isBooks) && <span className="home-brand-mark" aria-hidden="true">文</span>}
           文学与内心冲突
         </a>
         <span className="stage-label">{isHome ? '记录 · 阅读 · 回看' : '本地记录版'}</span>
@@ -133,6 +133,7 @@ export default function App() {
           <section className="section-page" aria-labelledby="section-title">
             <a className="back-link" href="#/">← 返回首页</a>
             <h1 id="section-title">{section?.title || '页面未找到'}</h1>
+            {path === '/journal' && <p className="journal-intro">{section.description}</p>}
             {path === '/journal' ? <JournalPage onDraftChange={setJournalDraft} /> : isBooks ? (
               <BooksPage path={path} browse={bookBrowse} onBrowseChange={setBookBrowse}
                 listPosition={bookListPosition} detailContext={bookDetailContext} onDraftChange={setBookDraft} />

@@ -173,13 +173,16 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
   .selection-grid { grid-template-columns: 1fr; gap: 8px; }
 }
 
-/* 首页使用独立类名，将暖色纸感和布局调整限定在首页。 */
-.home-shell {
+/* 已统一风格的页面共用首页配色与字体，各自保留布局。 */
+.home-shell, .journal-shell, .books-shell {
   --home-ink: #303e36;
   --home-muted: #626b60;
   --home-green: #46624c;
   --home-line: #dddcd1;
   --home-display-font: "STKaiti", "华文楷体", "KaiTi", "楷体", "Kaiti SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+.home-shell {
   width: min(100% - 80px, 1200px);
   color: var(--home-ink);
   position: relative;
@@ -231,6 +234,7 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
 .home-state-link { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--home-green); font-weight: 600; text-underline-offset: 4px; }
 .home-state-error { color: #805141; }
 .home-state-error button { font-size: 0.875rem; color: var(--home-green); background: #fffdf7; }
+.home-state-error button:hover:not(:disabled) { background: #edf1ec; border-color: var(--home-green); }
 .home-skeleton { display: grid; gap: 14px; margin-top: 26px; }
 .home-skeleton span { height: 12px; border-radius: 4px; background: #d7dfcf; }
 .home-skeleton span:nth-child(2) { width: 90%; }
@@ -300,11 +304,11 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
   .home-shell { width: calc(100% - 32px); }
   .home-shell .site-header { padding: 18px 0; gap: 9px; }
   .home-shell .brand { font-size: 13px; gap: 8px; }
-  .home-shell .stage-label { font-size: 10px; letter-spacing: 0.03em; }
+  .home-shell .stage-label { font-size: 0.8125rem; letter-spacing: 0.03em; }
   .home-brand-mark { width: 26px; height: 29px; font-size: 17px; }
   .home-shell main { padding: 28px 0 18px; }
   .home-page h1 { font-size: clamp(25px, 7.5vw, 34px); letter-spacing: 0.03em; }
-  .home-kicker { font-size: 11px; }
+  .home-kicker { font-size: 0.8125rem; }
   .home-update { gap: 2px; }
   .home-state-card { padding: 22px; }
   .home-summary { font-size: 22px; }
@@ -324,4 +328,145 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
 @media (prefers-reduced-motion: reduce) {
   .home-entry-card { transition: none; }
   .home-entry-card:hover { transform: none; }
+}
+
+/* 日精进沿用首页的暖纸底色和字体，样式只作用于当前板块。 */
+.journal-shell { position: relative; isolation: isolate; color: var(--home-ink); }
+.journal-shell::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: #f7f5ee; }
+.journal-shell .site-header { padding: 23px 0; border-color: var(--home-line); }
+.journal-shell .brand { display: inline-flex; align-items: center; gap: 12px; font-size: 15px; letter-spacing: 0.06em; }
+.journal-shell .stage-label { color: var(--home-muted); font-size: 0.8125rem; letter-spacing: 0.06em; }
+.journal-shell main { padding: 32px 0 48px; }
+.journal-shell .section-page { max-width: 760px; margin: 0 auto; overflow-wrap: anywhere; }
+.journal-shell .back-link { margin-bottom: 16px; color: var(--home-green); font-size: 0.875rem; text-underline-offset: 4px; }
+.journal-shell h1, .journal-shell h2, .journal-shell h3, .journal-shell legend { font-family: var(--home-display-font); font-weight: 400; }
+.journal-shell h1 { margin-bottom: 12px; font-size: clamp(30px, 3.7vw, 46px); letter-spacing: 0.06em; }
+.journal-shell h2 { font-size: 1.5rem; margin-bottom: 12px; }
+.journal-shell h3 { font-size: 1.25rem; line-height: 1.6; margin-bottom: 12px; }
+.journal-intro { margin-bottom: 28px; color: var(--home-muted); font-size: 1rem; line-height: 1.9; }
+.journal-shell .scope-note, .journal-shell .saved-date { color: var(--home-muted); font-size: 0.875rem; line-height: 1.8; }
+.journal-shell .storage-notice { padding: 18px 20px; background: #edf1e7; border: 1px solid #d4dbcb; border-radius: 10px; font-size: 0.9375rem; line-height: 1.9; }
+.journal-shell .journal-toolbar { margin: 24px 0; }
+.journal-shell .history-section { margin: 24px 0; padding: 24px; border: 1px solid #e0d9ca; border-radius: 10px; background: #faf7ef; }
+.journal-shell .history-section > p:last-child { margin-bottom: 0; }
+.journal-shell .history-list { gap: 12px; margin: 18px 0 0; }
+.journal-shell button { max-width: 100%; padding: 10px 16px; border-color: #829087; border-radius: 8px; background: #fffdf7; color: var(--home-ink); font-size: 0.9375rem; line-height: 1.6; overflow-wrap: anywhere; }
+.journal-shell button:hover:not(:disabled) { background: #edf1ec; border-color: var(--home-green); }
+.journal-shell .primary-button, .journal-shell .journal-toolbar button:first-child { background: var(--home-green); color: #fff; border-color: var(--home-green); }
+.journal-shell .primary-button:hover:not(:disabled), .journal-shell .journal-toolbar button:first-child:hover:not(:disabled) { background: #365b43; border-color: #365b43; }
+.journal-shell .danger-button { color: #982e2e; border-color: #a65656; }
+.journal-shell .danger-button:hover:not(:disabled) { background: #fff0f0; border-color: #a65656; }
+.journal-shell .history-item { padding: 16px 18px; border-color: var(--home-line); gap: 8px; }
+.journal-shell .history-item[aria-current="true"] { border: 2px solid var(--home-green); background: #eaf0e2; }
+.journal-shell .history-item[aria-current="true"]:hover:not(:disabled) { background: #e3eadb; }
+.journal-shell .history-item[aria-current="true"] time { text-decoration: underline; text-underline-offset: 4px; }
+.journal-shell .history-excerpt { font-size: 0.9375rem; line-height: 1.9; }
+.journal-shell .journal-form { margin: 28px 0; }
+.journal-shell fieldset, .journal-shell .saved-entry { padding: 28px; border: 1px solid #deded3; border-radius: 10px; background: #fffdf7; box-shadow: 0 4px 14px rgb(54 57 38 / 3%); }
+.journal-shell legend { max-width: 100%; padding: 0 8px; color: var(--home-ink); font-size: 1.375rem; line-height: 1.6; }
+.journal-shell label { margin: 20px 0 8px; }
+.journal-shell input, .journal-shell textarea { border-color: #829087; border-radius: 8px; background: #fffefa; color: var(--home-ink); font-size: 1rem; line-height: 1.8; }
+.journal-shell textarea { padding: 14px 16px; }
+.journal-shell textarea::placeholder { color: #697263; opacity: 1; }
+.journal-shell [aria-invalid="true"] { border-color: #9b3535; }
+.journal-shell :is(a, button, input, textarea):focus-visible { outline-color: var(--home-green); }
+.journal-shell .entry-original { font-size: 1rem; line-height: 1.95; }
+.journal-shell .record-actions { gap: 12px; margin: 24px 0 16px; }
+.journal-shell .record-actions a { color: var(--home-green); text-underline-offset: 4px; }
+.journal-shell .analysis-panel { margin-top: 28px; padding-top: 24px; border-color: var(--home-line); }
+.journal-shell .adopted-analysis { margin-top: 24px; padding: 20px; border: 1px solid #d4dbcb; border-radius: 8px; background: #edf1e7; }
+.journal-shell .adopted-analysis ul { padding-left: 20px; }
+.journal-shell .adopted-analysis li + li { margin-top: 8px; }
+.journal-shell .success-message { padding: 12px 16px; border-left: 3px solid var(--home-green); background: #edf1e7; border-radius: 0 6px 6px 0; color: #365b43; font-size: 0.9375rem; }
+.journal-shell .error-panel { background: #fff8f3; border-radius: 8px; }
+.journal-shell dialog { padding: 28px; border-color: #b8c1ae; border-radius: 12px; background: #fffdf7; color: var(--home-ink); line-height: 1.8; }
+.journal-shell .site-footer { padding: 18px 0 23px; border-color: var(--home-line); color: var(--home-muted); font-size: 0.8125rem; text-align: center; letter-spacing: 0.05em; }
+
+@media (max-width: 600px) {
+  .journal-shell .site-header { padding: 18px 0; gap: 9px; }
+  .journal-shell .brand { font-size: 13px; gap: 8px; }
+  .journal-shell main { padding: 20px 0 32px; }
+  .journal-shell h1 { font-size: clamp(25px, 7.5vw, 34px); letter-spacing: 0.03em; }
+  .journal-shell h2 { font-size: 1.375rem; }
+  .journal-intro { margin-bottom: 24px; }
+  .journal-shell .storage-notice, .journal-shell .history-section, .journal-shell fieldset, .journal-shell .saved-entry { padding: 18px; }
+  .journal-shell .adopted-analysis { padding: 16px; }
+  .journal-shell .analysis-panel fieldset { padding: 16px; }
+  .journal-shell dialog { padding: 22px; }
+}
+
+/* 书单与详情沿用首页字体和配色；筛选、推荐与原文备注保留各自的层级。 */
+.books-shell { position: relative; isolation: isolate; color: var(--home-ink); }
+.books-shell::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: #f7f5ee; }
+.books-shell .site-header { padding: 23px 0; border-color: var(--home-line); }
+.books-shell .brand { display: inline-flex; align-items: center; gap: 12px; font-size: 15px; letter-spacing: 0.06em; }
+.books-shell .stage-label { color: var(--home-muted); font-size: 0.8125rem; letter-spacing: 0.06em; }
+.books-shell main { padding: 32px 0 48px; }
+.books-shell .section-page { max-width: 900px; margin: 0 auto; overflow-wrap: anywhere; }
+.books-shell .back-link { margin-bottom: 16px; color: var(--home-green); font-size: 0.875rem; text-underline-offset: 4px; }
+.books-shell h1, .books-shell h2, .books-shell h3, .books-shell h4, .books-shell legend { font-family: var(--home-display-font); font-weight: 400; }
+.books-shell h1 { margin-bottom: 12px; font-size: clamp(30px, 3.7vw, 46px); letter-spacing: 0.06em; }
+.books-shell h2 { font-size: 1.5rem; margin-bottom: 12px; }
+.books-shell .books-page > p:first-child { margin-bottom: 28px; color: var(--home-muted); font-size: 1rem; line-height: 1.9; }
+.books-shell .scope-note, .books-shell .saved-date { color: var(--home-muted); font-size: 0.875rem; line-height: 1.8; }
+.books-shell fieldset { padding: 28px; border-color: #deded3; border-radius: 10px; background: #fffdf7; }
+.books-shell legend { max-width: 100%; color: var(--home-ink); font-size: 1.375rem; line-height: 1.6; }
+.books-shell .book-filters { padding: 18px 20px; margin: 24px 0; border-color: #e0d9ca; background: #faf7ef; }
+.books-shell .filter-options { gap: 12px; }
+.books-shell button { max-width: 100%; padding: 10px 16px; border-color: #829087; border-radius: 8px; background: #fffdf7; color: var(--home-ink); font-size: 0.9375rem; line-height: 1.6; overflow-wrap: anywhere; }
+.books-shell button:hover:not(:disabled) { background: #edf1ec; border-color: var(--home-green); }
+.books-shell .primary-button, .books-shell .filter-options button[aria-pressed="true"] { background: var(--home-green); border-color: var(--home-green); color: #fff; }
+.books-shell .filter-options button[aria-pressed="true"] { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.books-shell .primary-button:hover:not(:disabled), .books-shell .filter-options button[aria-pressed="true"]:hover:not(:disabled) { background: #365b43; border-color: #365b43; }
+.books-shell .danger-button { color: #982e2e; border-color: #a65656; }
+.books-shell .danger-button:hover:not(:disabled) { background: #fff0f0; border-color: #a65656; }
+.books-shell label { margin: 20px 0 8px; }
+.books-shell select, .books-shell textarea { border-color: #829087; border-radius: 8px; background: #fffefa; color: var(--home-ink); font-size: 1rem; line-height: 1.8; }
+.books-shell textarea { padding: 14px 16px; }
+.books-shell textarea::placeholder { color: #697263; opacity: 1; }
+.books-shell [aria-invalid="true"] { border-color: #9b3535; }
+.books-shell :is(a, button, select, textarea):focus-visible { outline-color: var(--home-green); }
+.books-shell .record-actions { gap: 12px; margin: 24px 0 16px; }
+.books-shell .book-list-heading { margin-top: 32px; }
+.books-shell .book-list-heading p, .books-shell .book-author { color: var(--home-muted); font-size: 0.9375rem; }
+.books-shell .book-grid { gap: 24px; }
+.books-shell .book-card, .books-shell .book-detail { padding: 28px; border-color: #deded3; border-radius: 10px; background: #fffdf7; box-shadow: 0 4px 14px rgb(54 57 38 / 3%); line-height: 1.9; }
+.books-shell .book-card h3, .books-shell .book-card h4 { font-size: 1.5rem; line-height: 1.6; margin-bottom: 8px; }
+.books-shell .book-card :is(h3, h4) a { text-underline-offset: 5px; text-decoration-thickness: 1px; }
+.books-shell .book-types, .books-shell .book-detail .eyebrow { color: var(--home-green); font-size: 0.875rem; }
+.books-shell .book-open { align-self: stretch; min-height: 44px; padding: 16px 0 0; border-top: 1px solid var(--home-line); color: var(--home-green); font-size: 0.9375rem; text-underline-offset: 4px; }
+.books-shell .recommendation-conditions { padding: 18px 20px; border: 1px solid #d4dbcb; border-radius: 8px; background: #edf1e7; }
+.books-shell .recommendation-group { margin: 32px 0; }
+.books-shell .recommendation-group > h3 { font-size: 1.5rem; line-height: 1.6; }
+.books-shell .match-reason { margin: 8px 0 20px; padding: 18px; border-radius: 8px; background: #edf1e7; font-size: 0.9375rem; line-height: 1.9; }
+.books-shell .match-reason a, .books-shell .book-sources a, .books-shell .demo-explanation a { color: var(--home-green); text-underline-offset: 4px; }
+.books-shell .book-detail h2 { font-size: 1.875rem; }
+.books-shell .book-detail h3 { margin: 28px 0 12px; font-size: 1.375rem; line-height: 1.6; }
+.books-shell .book-detail :is(.match-reason, .demo-explanation) h3 { margin-top: 0; }
+.books-shell .book-detail .scope-note { border-color: var(--home-line); }
+.books-shell .book-detail li + li { margin-top: 8px; }
+.books-shell .demo-explanation { padding: 20px; margin: 24px 0; border-color: #e0d9ca; border-radius: 8px; background: #faf7ef; }
+.books-shell .reading-panel { margin-top: 32px; padding-top: 4px; border-color: var(--home-line); }
+.books-shell .storage-notice { padding: 18px 20px; border: 1px solid #d4dbcb; border-radius: 8px; background: #edf1e7; font-size: 0.9375rem; line-height: 1.9; }
+.books-shell .reading-badges span { background: #edf1e7; color: var(--home-green); font-size: 0.8125rem; }
+.books-shell .saved-note { padding: 20px; border: 1px solid #e0d9ca; border-radius: 8px; background: #faf7ef; }
+.books-shell .saved-note h4 { font-size: 1.25rem; line-height: 1.6; }
+.books-shell .entry-original { font-size: 1rem; line-height: 1.95; }
+.books-shell .success-message { padding: 12px 16px; border-left: 3px solid var(--home-green); background: #edf1e7; border-radius: 0 6px 6px 0; color: #365b43; font-size: 0.9375rem; }
+.books-shell .error-panel { background: #fff8f3; border-radius: 8px; }
+.books-shell dialog { padding: 28px; border-color: #b8c1ae; border-radius: 12px; background: #fffdf7; color: var(--home-ink); line-height: 1.8; }
+.books-shell .site-footer { padding: 18px 0 23px; border-color: var(--home-line); color: var(--home-muted); font-size: 0.8125rem; text-align: center; letter-spacing: 0.05em; }
+
+@media (max-width: 600px) {
+  .books-shell .site-header { padding: 18px 0; gap: 9px; }
+  .books-shell .brand { font-size: 13px; gap: 8px; }
+  .books-shell main { padding: 20px 0 32px; }
+  .books-shell h1 { font-size: clamp(25px, 7.5vw, 34px); letter-spacing: 0.03em; }
+  .books-shell h2, .books-shell .recommendation-group > h3 { font-size: 1.375rem; }
+  .books-shell .books-page > p:first-child { margin-bottom: 24px; }
+  .books-shell fieldset, .books-shell .book-filters, .books-shell .book-card, .books-shell .book-detail { padding: 18px; }
+  .books-shell .book-grid { gap: 16px; }
+  .books-shell .book-detail h2 { font-size: 1.625rem; }
+  .books-shell .match-reason, .books-shell .demo-explanation, .books-shell .recommendation-conditions, .books-shell .storage-notice, .books-shell .saved-note { padding: 16px; }
+  .books-shell dialog { padding: 22px; }
 }
