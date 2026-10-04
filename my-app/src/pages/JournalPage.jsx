@@ -139,11 +139,11 @@ export default function JournalPage({ onDraftChange }) {
       resetForm();
       setNotice(mode === 'edit'
         ? editBase.adoptedAnalysis && input.text !== editBase.text
-          ? '原文修改已保存，对应的旧分析已清除，可重新核对分析。'
-          : '修改已保存在此浏览器，原记录已更新。'
-        : '已保存在此浏览器。');
+          ? '保存成功：原文修改已保存在当前浏览器；因原文变化，旧分析已清除，可重新核对分析。'
+          : '保存成功：修改已保存在当前浏览器，原记录已更新。'
+        : '保存成功：这条日精进已保存在当前浏览器。');
     } catch (error) {
-      reportFailure(error, '保存未成功，输入已保留。请检查浏览器存储是否可用，或稍后重试；此前保存的内容不会被覆盖。');
+      reportFailure(error, '保存失败：本次输入仍保留在页面中。请检查浏览器存储是否可用，或稍后重试；此前保存的内容不会被覆盖。');
     } finally {
       submitting.current = false;
       setWorking(false);
@@ -232,9 +232,9 @@ export default function JournalPage({ onDraftChange }) {
           </ol> : <p>还没有保存的日精进，可以从下面写下第一条。</p>}
         </section>
 
-        {editing && <form className="journal-form" onSubmit={handleSave} noValidate>
+        {editing && <form className="journal-form" onSubmit={handleSave} noValidate aria-busy={working}>
           <fieldset disabled={working}>
-            <legend>{mode === 'edit' ? '修改这条日精进' : '写下一条日精进'}</legend>
+            <legend>{mode === 'edit' ? '修改这条日精进' : '写下今天的总结'}</legend>
             {mode === 'new' && <div className="record-actions">
               <button type="button" onClick={() => requestAction({ type: 'fixture' })}>填写虚构示例</button>
               <span className="scope-note">仅填入表单，保存后才能载入演示分析。</span>
@@ -257,9 +257,10 @@ export default function JournalPage({ onDraftChange }) {
             {errors.text && <p className="field-error" id="text-error" role="alert">{errors.text}</p>}
             <div className="record-actions">
               <button className="primary-button" type="submit" disabled={mode === 'edit' && !formDirty}>
-                {working ? '正在保存……' : mode === 'edit' ? '保存修改' : '保存日精进'}
+                {working ? '正在保存，请稍候…' : mode === 'edit' ? '保存修改' : '保存日精进'}
               </button>
               {entries.length > 0 && <button type="button" onClick={() => requestAction({ type: 'cancel' })}>取消编辑</button>}
+              {working && <span className="scope-note" role="status">正在将这条日精进保存到当前浏览器，请不要关闭页面。</span>}
             </div>
             <p className="scope-note">请先保存原文，再查看分析。真实 AI 尚未接入；演示仅适用于“填写虚构示例”提供的固定原文。</p>
           </fieldset>

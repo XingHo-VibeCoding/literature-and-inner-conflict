@@ -38,6 +38,7 @@ export default function HomePage() {
   }
 
   const snapshot = view.snapshot;
+  const activePreviewLabel = previewStates.find((state) => state.id === request.scenario)?.label;
 
   return (
     <div className="home-page">
@@ -144,8 +145,11 @@ export default function HomePage() {
         <p>只切换首页的虚构场景，不读取或改动个人记录。“加载中”会保持等待画面，选择其他状态即可结束；刷新页面恢复有内容的示例。</p>
         <div className="home-preview-options" role="group" aria-label="选择首页演示状态">
           {previewStates.map((state) => <button type="button" key={state.id}
-            aria-pressed={request.scenario === state.id} onClick={() => showScenario(state.id)}>{state.label}</button>)}
+            aria-pressed={request.scenario === state.id} onClick={() => showScenario(state.id)}>
+            {request.scenario === state.id && <span aria-hidden="true">✓</span>}{state.label}
+          </button>)}
         </div>
+        <p className="home-preview-current" role="status">当前演示：{activePreviewLabel}</p>
       </details>}
     </div>
   );

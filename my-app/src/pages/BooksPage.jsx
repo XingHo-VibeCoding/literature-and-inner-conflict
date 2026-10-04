@@ -40,6 +40,15 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   const activeExplanation = activeExplanationKey ? explanations[activeExplanationKey] : null;
   const heading = useRef(null);
   const list = useRef(null);
+  const situationField = useRef(null);
+  const directionField = useRef(null);
+  const missingSelections = [
+    errors.situation && '当前处境',
+    errors.direction && '改变方向',
+  ].filter(Boolean);
+  const recommendationError = missingSelections.length
+    ? `还不能查看推荐：请先选择${missingSelections.join('和')}。`
+    : errors.category || '';
 
   useEffect(() => {
     let active = true;
@@ -110,6 +119,10 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
     const next = buildRecommendations({ category, situationTagId, directionTagId });
     if (!next.results) {
       onBrowseChange((previous) => ({ ...previous, errors: next.errors, notice: '' }));
+      requestAnimationFrame(() => {
+        if (next.errors.situation) situationField.current?.focus();
+        else if (next.errors.direction) directionField.current?.focus();
+      });
       return;
     }
     listPosition.current = { top: 0, bookKey: null };
@@ -275,7 +288,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
           <div className="selection-grid">
             <div>
               <label htmlFor="situation-tag">当前处境</label>
-              <select id="situation-tag" value={situationTagId} aria-invalid={Boolean(errors.situation)}
+              <select id="situation-tag" ref={situationField} value={situationTagId} aria-invalid={Boolean(errors.situation)}
                 aria-describedby={errors.situation ? 'situation-error selection-help' : 'selection-help'}
                 onChange={(event) => changeConditions({ situationTagId: event.target.value })}>
                 <option value="">请选择当前处境</option>
@@ -285,7 +298,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
             </div>
             <div>
               <label htmlFor="direction-tag">改变方向</label>
-              <select id="direction-tag" value={directionTagId} aria-invalid={Boolean(errors.direction)}
+              <select id="direction-tag" ref={directionField} value={directionTagId} aria-invalid={Boolean(errors.direction)}
                 aria-describedby={errors.direction ? 'direction-error selection-help' : 'selection-help'}
                 onChange={(event) => changeConditions({ directionTagId: event.target.value })}>
                 <option value="">请选择改变方向</option>
@@ -294,7 +307,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
               {errors.direction && <p className="field-error" id="direction-error" role="alert">{errors.direction}</p>}
             </div>
           </div>
-          {errors.category && <p className="field-error" role="alert">{errors.category}</p>}
+          {recommendationError && <p className="field-error" role="alert">{recommendationError}</p>}
           <div className="record-actions">
             <button className="primary-button" type="submit">查看两类推荐</button>
             {view === 'recommendations' && <button type="button" onClick={showAllBooks}>返回全部书目</button>}
