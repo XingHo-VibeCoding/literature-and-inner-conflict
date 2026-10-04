@@ -3,6 +3,7 @@ import { countCharacters, localToday, validateEntry } from '../../shared/validat
 import { createEntry, deleteEntry, readEntries, updateEntry } from '../services/localStore.js';
 import { sortEntries } from '../services/entryModel.js';
 import { DEMO_ENTRY_TEXT } from '../services/analysisModel.js';
+import { runTemporaryFavoriteAction } from '../services/temporaryFavorite.js';
 import AnalysisPanel from './AnalysisPanel.jsx';
 
 export default function JournalPage({ onDraftChange }) {
@@ -23,14 +24,19 @@ export default function JournalPage({ onDraftChange }) {
   const [confirmation, setConfirmation] = useState(null);
   const [analysisState, setAnalysisState] = useState({ dirty: false, saving: false });
   const [analysisVisit, setAnalysisVisit] = useState(0);
+  const [favoriteEntryIds, setFavoriteEntryIds] = useState(() => new Set());
+  const [favoriteAction, setFavoriteAction] = useState(null);
+  const [favoriteFeedback, setFavoriteFeedback] = useState(null);
   const submitting = useRef(false);
+  const favoriteLock = useRef(false);
   const dialog = useRef(null);
   const entry = entries.find((item) => item.id === selectedId);
   const editing = mode === 'new' || mode === 'edit';
   const formDirty = editing && (text !== baseline.current.text || entryDate !== baseline.current.entryDate);
   const dirty = formDirty || analysisState.dirty;
-  const busy = working || analysisState.saving;
+  const busy = working || analysisState.saving || Boolean(favoriteAction);
   const count = countCharacters(text);
+  const entryFavorited = Boolean(entry && favoriteEntryIds.has(entry.id));
 
   function resetForm(value = { entryDate: localToday(), text: '' }) {
     baseline.current = { entryDate: value.entryDate, text: value.text };
@@ -122,6 +128,41 @@ export default function JournalPage({ onDraftChange }) {
     setOperationError(error.code === 'LOCAL_VERSION_CONFLICT' ? error.message : fallback);
   }
 
+  async function toggleFavorite(target) {
+    if (favoriteLock.current || busy) return;
+    const wasFavorite = favoriteEntryIds.has(target.id);
+    favoriteLock.current = true;
+    setFavoriteAction({ entryId: target.id, removing: wasFavorite });
+    setFavoriteFeedback(null);
+    try {
+      await runTemporaryFavoriteAction();
+      setFavoriteEntryIds((current) => {
+        const next = new Set(current);
+        if (wasFavorite) next.delete(target.id);
+        else next.add(target.id);
+        return next;
+      });
+      setFavoriteFeedback({
+        entryId: target.id,
+        type: 'success',
+        message: wasFavorite
+          ? `已取消收藏 ${target.entryDate} 的日总结。`
+          : `已收藏 ${target.entryDate} 的日总结，刷新页面后会重置。`,
+      });
+    } catch {
+      setFavoriteFeedback({
+        entryId: target.id,
+        type: 'error',
+        message: wasFavorite
+          ? '取消收藏失败：这条日总结仍保持已收藏，请重试。'
+          : '收藏失败：这条日总结仍未收藏，请重试。',
+      });
+    } finally {
+      favoriteLock.current = false;
+      setFavoriteAction(null);
+    }
+  }
+
   async function save(input) {
     if (submitting.current) return;
     submitting.current = true;
@@ -172,6 +213,12 @@ export default function JournalPage({ onDraftChange }) {
     try {
       await deleteEntry(target.id, target.revision);
       const remaining = entries.filter((item) => item.id !== target.id);
+      setFavoriteEntryIds((current) => {
+        const next = new Set(current);
+        next.delete(target.id);
+        return next;
+      });
+      setFavoriteFeedback((current) => current?.entryId === target.id ? null : current);
       setEntries(remaining);
       setSelectedId(remaining[0]?.id || null);
       setMode(remaining.length ? 'view' : 'new');
@@ -198,6 +245,7 @@ export default function JournalPage({ onDraftChange }) {
       <p className="storage-notice">
         数据仅保存在当前浏览器；换设备不共享，清理浏览器数据后可能丢失。
         同一浏览器的使用者可读取这些记录。本步操作均在本地完成，不会发送给 AI。
+        日总结收藏目前只在本次打开页面期间有效，刷新后重置。
       </p>
       <p className="scope-note">按日期回看自己的想法与行动。分析目前支持虚构示例的本地演示，真实 AI 尚未接入。</p>
       {loading && <p role="status">正在读取此浏览器的记录……</p>}
@@ -266,7 +314,7 @@ export default function JournalPage({ onDraftChange }) {
           </fieldset>
         </form>}
 
-        {!editing && entry && <section className="saved-entry" aria-labelledby="saved-title">
+        {!editing && entry && <section className={`saved-entry${entryFavorited ? ' is-favorited' : ''}`} aria-labelledby="saved-title">
           <h2 id="saved-title">记录详情</h2>
           <p className="saved-date">记录日期：<time dateTime={entry.entryDate}>{entry.entryDate}</time></p>
           <h3>你的原文</h3>
@@ -285,10 +333,23 @@ export default function JournalPage({ onDraftChange }) {
           <AnalysisPanel key={`${entry.id}:${analysisVisit}`} entry={entry} disabled={working} onStateChange={setAnalysisState}
             onAdopted={(saved) => setEntries((current) => sortEntries(current.map((item) => item.id === saved.id ? saved : item)))} />
           <div className="record-actions">
+            <button type="button" className="favorite-button" disabled={busy}
+              aria-busy={favoriteAction?.entryId === entry.id} aria-pressed={entryFavorited}
+              aria-label={entryFavorited ? `已收藏 ${entry.entryDate} 的日总结，点击取消收藏` : `收藏 ${entry.entryDate} 的日总结`}
+              onClick={() => void toggleFavorite(entry)}>
+              {favoriteAction?.entryId === entry.id
+                ? favoriteAction.removing ? '取消中…' : '收藏中…'
+                : entryFavorited ? '已收藏' : '收藏日总结'}
+            </button>
             <button type="button" disabled={busy} onClick={() => requestAction({ type: 'edit' })}>修改记录</button>
             <button className="danger-button" type="button" disabled={busy} onClick={() => requestAction({ type: 'delete' })}>删除记录</button>
             <a href="#/books">从这条记录去选书</a>
           </div>
+          {favoriteFeedback?.entryId === entry.id && <p
+            className={favoriteFeedback.type === 'error' ? 'error-panel' : 'success-message'}
+            role={favoriteFeedback.type === 'error' ? 'alert' : 'status'}>
+            {favoriteFeedback.message}
+          </p>}
           {busy && <p role="status">正在处理，请稍候……</p>}
         </section>}
       </>}

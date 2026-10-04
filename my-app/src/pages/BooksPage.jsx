@@ -28,10 +28,15 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   const isList = path === '/books';
   const book = isList ? null : getBook(path.slice('/books/'.length));
   const [reading, setReading] = useState({ favorites: [], notes: [], status: 'loading' });
+  const [favoriteBookIds, setFavoriteBookIds] = useState(() => new Set());
   const [reloadKey, setReloadKey] = useState(0);
   const [explanations, setExplanations] = useState({});
   const [explanationError, setExplanationError] = useState(null);
-  const books = filterPersonalBooks(listBooks(category), view, reading);
+  const temporaryReading = {
+    ...reading,
+    favorites: [...favoriteBookIds].map((bookId) => ({ bookId })),
+  };
+  const books = filterPersonalBooks(listBooks(category), view, temporaryReading);
   const personalView = view === 'favorites' || view === 'noted';
   const viewTitle = personalViews.find((item) => item.id === view)?.label || '全部书目';
   const resolvedContext = resolveRecommendationContext(detailContext, results);
@@ -68,11 +73,20 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
     }));
   }
 
+  function updateTemporaryFavorite(bookId, favorite) {
+    setFavoriteBookIds((current) => {
+      const next = new Set(current);
+      if (favorite) next.add(bookId);
+      else next.delete(bookId);
+      return next;
+    });
+  }
+
   const readingStatus = reading.status !== 'ready' && (
-    reading.status === 'loading' ? <p role="status">正在读取收藏和备注…</p> : (
+    reading.status === 'loading' ? <p role="status">正在读取阅读备注…</p> : (
       <div className="error-panel" role="alert">
-        <p>收藏和备注读取失败，当前无法确认个人保存状态。原有数据没有清空。</p>
-        <button type="button" onClick={() => setReloadKey((value) => value + 1)}>重新读取</button>
+        <p>阅读备注读取失败，当前无法确认个人备注状态。原有备注没有清空。</p>
+        <button type="button" onClick={() => setReloadKey((value) => value + 1)}>重新读取备注</button>
       </div>
     )
   );
@@ -147,7 +161,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   function renderBookCard(item, groupId, baseReason) {
     const Title = groupId ? 'h4' : 'h3';
     return (
-      <article className="book-card" key={item.id}>
+      <article className={`book-card${favoriteBookIds.has(item.id) ? ' is-favorited' : ''}`} key={item.id}>
         <BookTypes book={item} />
         <Title>
           <a href={`#/books/${item.id}`} data-book-key={`${groupId || 'all'}:${item.id}`}
@@ -157,7 +171,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
         <p className="book-author">{item.author}</p>
         {reading.status === 'ready' && (
           <p className="reading-badges">
-            {reading.favorites.some((value) => value.bookId === item.id) && <span>已收藏</span>}
+            {favoriteBookIds.has(item.id) && <span>已收藏</span>}
             {reading.notes.some((value) => value.bookId === item.id) && <span>有备注</span>}
           </p>
         )}
@@ -195,7 +209,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
           if (activeContext) onBrowseChange((previous) => ({ ...previous, view: 'recommendations' }));
         }}>← 返回书单</a>
         {book ? (
-          <article className="book-detail" aria-labelledby="book-title">
+          <article className={`book-detail${favoriteBookIds.has(book.id) ? ' is-favorited' : ''}`} aria-labelledby="book-title">
             <p className="eyebrow">作品详情</p>
             <h2 id="book-title" ref={heading} tabIndex={-1}>{book.title}</h2>
             <p className="book-author">作者／编纂：{book.author}</p>
@@ -242,9 +256,10 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
             <p className="scope-note">简介、主题与阅读联系由 AI 依据所列资料整理，供你核对；未引用作品原文。推荐只使用你本次选择的条件，不读取日精进原文。</p>
             {readingStatus}
             {reading.status === 'ready' && <BookReadingPanel key={`${book.id}:${reloadKey}`}
-              book={book} favorite={reading.favorites.some((item) => item.bookId === book.id)}
+              book={book} favorite={favoriteBookIds.has(book.id)}
               note={reading.notes.find((item) => item.bookId === book.id) || null}
-              onSaved={updateReading} onReload={() => setReloadKey((value) => value + 1)}
+              onFavoriteChange={updateTemporaryFavorite} onSaved={updateReading}
+              onReload={() => setReloadKey((value) => value + 1)}
               onDraftChange={onDraftChange} />}
           </article>
         ) : (

@@ -1,27 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
 import { countCharacters, validateNote } from '../../shared/validation.js';
-import { deleteNote, saveNote, setFavorite } from '../services/localStore.js';
+import { deleteNote, saveNote } from '../services/localStore.js';
+import { runTemporaryFavoriteAction } from '../services/temporaryFavorite.js';
 
-export default function BookReadingPanel({ book, favorite, note, onSaved, onReload, onDraftChange }) {
+export default function BookReadingPanel({ book, favorite, note, onFavoriteChange, onSaved, onReload, onDraftChange }) {
   const [savedNote, setSavedNote] = useState(note);
   const [body, setBody] = useState(note?.body || '');
   const [busy, setBusy] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const lock = useRef(false);
+  const favoriteLock = useRef(false);
   const [error, setError] = useState('');
   const [fieldError, setFieldError] = useState('');
   const [message, setMessage] = useState('');
   const deleteDialog = useRef(null);
   const reloadDialog = useRef(null);
   const dirty = body !== (savedNote?.body || '');
+  const processing = busy || favoriteBusy;
 
   useEffect(() => {
-    onDraftChange({ dirty, saving: busy });
+    onDraftChange({ dirty, saving: processing });
     const beforeUnload = (event) => {
-      if (dirty || busy) { event.preventDefault(); event.returnValue = ''; }
+      if (dirty || processing) { event.preventDefault(); event.returnValue = ''; }
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => window.removeEventListener('beforeunload', beforeUnload);
-  }, [dirty, busy, onDraftChange]);
+  }, [dirty, processing, onDraftChange]);
 
   useEffect(() => () => onDraftChange({ dirty: false, saving: false }), [onDraftChange]);
 
@@ -51,27 +55,49 @@ export default function BookReadingPanel({ book, favorite, note, onSaved, onRelo
     });
   }
 
+  async function toggleFavorite() {
+    if (favoriteLock.current || busy) return;
+    const wasFavorite = favorite;
+    favoriteLock.current = true;
+    setFavoriteBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await runTemporaryFavoriteAction();
+      onFavoriteChange(book.id, !wasFavorite);
+      setMessage(wasFavorite
+        ? `已取消收藏《${book.title}》。`
+        : `已收藏《${book.title}》，刷新页面后会重置。`);
+    } catch {
+      setError(wasFavorite
+        ? '取消收藏失败：仍保持已收藏，请重试。'
+        : '收藏失败：当前仍未收藏，请重试。');
+    } finally {
+      favoriteLock.current = false;
+      setFavoriteBusy(false);
+    }
+  }
+
   return (
     <section className="reading-panel" aria-labelledby="reading-title">
       <h3 id="reading-title">我的阅读记录</h3>
-      <p className="storage-notice">收藏和备注仅保存在当前浏览器，换设备不共享；清理浏览器数据可能丢失，同一浏览器配置的使用者可以看到。备注由你填写，不会发送给 AI。</p>
+      <p className="storage-notice">收藏目前只在本次打开页面期间有效，刷新后重置；备注仍保存在当前浏览器。备注由你填写，不会发送给 AI。</p>
       <div className="record-actions">
-        <span>{favorite ? '已收藏' : '未收藏'}</span>
-        <button type="button" disabled={busy} onClick={() => write(
-          () => setFavorite(book.id, !favorite),
-          (value) => {
-            onSaved('favorites', value);
-            setMessage(value ? '已收藏。' : '已取消收藏，备注保留。');
-          },
-        )}>{favorite ? '取消收藏' : '收藏作品'}</button>
-        <button type="button" disabled={busy} onClick={() => {
+        <span aria-live="polite">{favorite ? '已收藏' : '未收藏'}</span>
+        <button type="button" className="favorite-button" disabled={processing}
+          aria-busy={favoriteBusy} aria-pressed={favorite}
+          aria-label={favorite ? `已收藏《${book.title}》，点击取消收藏` : `收藏《${book.title}》`}
+          onClick={() => void toggleFavorite()}>
+          {favoriteBusy ? (favorite ? '取消中…' : '收藏中…') : favorite ? '已收藏' : '收藏'}
+        </button>
+        <button type="button" disabled={processing} onClick={() => {
           if (dirty) reloadDialog.current.showModal();
           else onReload();
-        }}>重新读取</button>
+        }}>重新读取备注</button>
       </div>
       <form onSubmit={submit} noValidate>
         <label htmlFor="reading-note">我的阅读备注（原文）</label>
-        <textarea id="reading-note" rows={6} value={body} disabled={busy}
+        <textarea id="reading-note" rows={6} value={body} disabled={processing}
           aria-invalid={Boolean(fieldError)} aria-describedby="note-help note-count note-error"
           onChange={(event) => { setBody(event.target.value); setFieldError(''); setMessage(''); }} />
         <div className="input-help">
@@ -80,8 +106,8 @@ export default function BookReadingPanel({ book, favorite, note, onSaved, onRelo
         </div>
         <p id="note-error" className="field-error" role={fieldError ? 'alert' : undefined}>{fieldError}</p>
         <div className="record-actions">
-          <button type="submit" className="primary-button" disabled={busy}>{busy ? '正在处理…' : '保存备注'}</button>
-          {savedNote && <button type="button" className="danger-button" disabled={busy}
+          <button type="submit" className="primary-button" disabled={processing}>{busy ? '正在处理…' : '保存备注'}</button>
+          {savedNote && <button type="button" className="danger-button" disabled={processing}
             onClick={() => deleteDialog.current.showModal()}>删除备注</button>}
           {dirty && <span>有未保存的更改</span>}
         </div>
