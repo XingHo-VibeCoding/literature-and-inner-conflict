@@ -118,11 +118,18 @@ export default function App() {
   return (
     <div className={`app-shell${isHome ? ' home-shell' : path === '/journal' ? ' journal-shell' : isBooks ? ' books-shell' : ''}`} onClick={handleLinkClick}>
       <header className="site-header">
-        <a className="brand" href="#/">
-          {(isHome || path === '/journal' || isBooks) && <span className="home-brand-mark" aria-hidden="true">文</span>}
-          文学与内心冲突
-        </a>
-        <span className="stage-label">{isHome ? '记录 · 阅读 · 回看' : '本地记录版'}</span>
+        <div className="site-identity">
+          <a className="brand" href="#/">
+            {(isHome || path === '/journal' || isBooks) && <span className="home-brand-mark" aria-hidden="true">文</span>}
+            文学与内心冲突
+          </a>
+          <span className="stage-label">{isHome ? '记录 · 阅读 · 回看' : '本地记录版'}</span>
+        </div>
+        <nav className="site-nav" aria-label="主要页面">
+          <a href="#/" aria-current={isHome ? 'page' : undefined}>首页</a>
+          <a href="#/journal" aria-current={path === '/journal' ? 'page' : undefined}>总结</a>
+          <a href="#/books" aria-current={isBooks ? 'page' : undefined}>书本推荐</a>
+        </nav>
       </header>
 
       <main>

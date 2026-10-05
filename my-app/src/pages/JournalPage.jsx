@@ -6,6 +6,13 @@ import { DEMO_ENTRY_TEXT } from '../services/analysisModel.js';
 import { runTemporaryFavoriteAction } from '../services/temporaryFavorite.js';
 import AnalysisPanel from './AnalysisPanel.jsx';
 
+const historyStateOptions = [
+  { id: 'loading', label: '加载中' },
+  { id: 'success', label: '加载成功' },
+  { id: 'empty', label: '没有结果' },
+  { id: 'error', label: '请求失败' },
+];
+
 export default function JournalPage({ onDraftChange }) {
   const baseline = useRef({ entryDate: localToday(), text: '' });
   const [entryDate, setEntryDate] = useState(baseline.current.entryDate);
@@ -21,6 +28,7 @@ export default function JournalPage({ onDraftChange }) {
   const [notice, setNotice] = useState('');
   const [working, setWorking] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [historyPreview, setHistoryPreview] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [analysisState, setAnalysisState] = useState({ dirty: false, saving: false });
   const [analysisVisit, setAnalysisVisit] = useState(0);
@@ -37,6 +45,16 @@ export default function JournalPage({ onDraftChange }) {
   const busy = working || analysisState.saving || Boolean(favoriteAction);
   const count = countCharacters(text);
   const entryFavorited = Boolean(entry && favoriteEntryIds.has(entry.id));
+  const actualHistoryState = loading ? 'loading' : readError ? 'error' : entries.length ? 'success' : 'empty';
+  const historyState = import.meta.env.DEV && historyPreview ? historyPreview : actualHistoryState;
+  const historyStateLabel = historyStateOptions.find((item) => item.id === historyState)?.label;
+  const actualHistoryStateLabel = historyStateOptions.find((item) => item.id === actualHistoryState)?.label;
+  const actualHistoryReady = !loading && !readError;
+  const showJournalWorkspace = actualHistoryReady && historyPreview === null;
+  const visibleHistoryCount = historyState === 'success' ? entries.length : historyState === 'empty' ? 0 : null;
+  const historyErrorMessage = historyPreview === 'error'
+    ? '这是一次请求失败演示。这不代表记录为空，也不会清除当前浏览器里已经保存的记录。'
+    : readError;
 
   function resetForm(value = { entryDate: localToday(), text: '' }) {
     baseline.current = { entryDate: value.entryDate, text: value.text };
@@ -58,7 +76,6 @@ export default function JournalPage({ onDraftChange }) {
       setMode(saved.length ? 'view' : 'new');
       setEditBase(null);
       resetForm();
-      setNotice(saved.length ? '已从此浏览器读取记录。' : '');
     }).catch(() => {
       if (active) setReadError('暂时无法读取此浏览器的记录。这不代表记录为空，原有数据不会被清除，请稍后重试。');
     }).finally(() => {
@@ -109,6 +126,7 @@ export default function JournalPage({ onDraftChange }) {
       setEditBase(entry);
       setMode('edit');
     } else if (action.type === 'reload') {
+      setHistoryPreview(null);
       setLoadAttempt((attempt) => attempt + 1);
     } else {
       const nextId = action.id || selectedId || entries[0]?.id || null;
@@ -248,26 +266,45 @@ export default function JournalPage({ onDraftChange }) {
         日总结收藏目前只在本次打开页面期间有效，刷新后重置。
       </p>
       <p className="scope-note">按日期回看自己的想法与行动。分析目前支持虚构示例的本地演示，真实 AI 尚未接入。</p>
-      {loading && <p role="status">正在读取此浏览器的记录……</p>}
-      {readError && <div className="error-panel" role="alert">
-        <p>{readError}</p>
-        <button type="button" onClick={() => requestAction({ type: 'reload' })}>重新读取记录</button>
-      </div>}
-      {notice && <p className="success-message" role="status">{notice}</p>}
-      {operationError && <div className="error-panel" role="alert">
+
+      {import.meta.env.DEV && <details className="history-preview-controls">
+        <summary>历史列表状态演示</summary>
+        <p>只改变历史列表的显示，不会新增、修改或删除当前浏览器中的记录。刷新页面会恢复实际读取状态。</p>
+        <div className="history-preview-options" role="group" aria-label="选择历史列表演示状态">
+          {historyStateOptions.map((state) => <button type="button" key={state.id}
+            disabled={state.id === 'success' && actualHistoryState !== 'success'}
+            aria-pressed={historyState === state.id}
+            onClick={() => setHistoryPreview(state.id === 'success' ? null : state.id)}>
+            {historyState === state.id && <span aria-hidden="true">✓</span>}{state.label}
+          </button>)}
+        </div>
+        {actualHistoryState !== 'success' && <p className="scope-note">“加载成功”需要当前浏览器中至少有一条真实记录。可以恢复实际状态后，用现有虚构示例自行保存一条再验证。</p>}
+        <button type="button" disabled={historyPreview === null} onClick={() => setHistoryPreview(null)}>恢复实际读取状态</button>
+        <p className="history-preview-current" role="status">当前显示：{historyStateLabel}；实际读取：{actualHistoryStateLabel}</p>
+      </details>}
+
+      {historyPreview === null && notice && <p className="success-message" role="status">{notice}</p>}
+      {historyPreview === null && operationError && <div className="error-panel" role="alert">
         <p>{operationError}</p>
         <button type="button" disabled={busy} onClick={() => requestAction({ type: 'reload' })}>重新读取记录</button>
       </div>}
 
-      {!loading && !readError && <>
-        <div className="journal-toolbar">
-          <button type="button" disabled={busy} onClick={() => requestAction({ type: 'new' })}>新建日精进</button>
-          <button type="button" disabled={busy} onClick={() => requestAction({ type: 'reload' })}>刷新记录列表</button>
-        </div>
-        <section className="history-section" aria-labelledby="history-title">
-          <h2 id="history-title">历史记录（{entries.length} 条）</h2>
+      {showJournalWorkspace && <div className="journal-toolbar">
+        <button type="button" disabled={busy} onClick={() => requestAction({ type: 'new' })}>新建日精进</button>
+        <button type="button" disabled={busy} onClick={() => requestAction({ type: 'reload' })}>刷新记录列表</button>
+      </div>}
+
+      <section className="history-section" aria-labelledby="history-title" aria-busy={historyState === 'loading'}>
+        <h2 id="history-title">{visibleHistoryCount === null ? '历史记录' : `历史记录（${visibleHistoryCount} 条）`}</h2>
+        {historyState === 'loading' && <div className="history-state history-state-loading">
+          <p className="history-state-heading" role="status">正在读取历史记录，请稍候……</p>
+          <p>正在查看保存在当前浏览器中的记录。</p>
+          <div className="history-skeleton" aria-hidden="true"><span /><span /><span /></div>
+        </div>}
+        {historyState === 'success' && <>
+          <p className="history-state-summary" role="status">已读取 {entries.length} 条记录。可以选择一条回看，或新建一条日精进。</p>
           <p className="scope-note">记录日期从新到旧，同一天按创建时间从新到旧。</p>
-          {entries.length ? <ol className="history-list">
+          <ol className="history-list">
             {entries.map((item) => <li key={item.id}>
               <button className="history-item" type="button" disabled={busy}
                 aria-current={selectedId === item.id ? 'true' : undefined}
@@ -277,9 +314,26 @@ export default function JournalPage({ onDraftChange }) {
                 <span className="scope-note">{item.adoptedAnalysis?.source === 'demo' ? '有已采纳演示分析' : item.adoptedAnalysis ? '有已采纳分析' : '暂无已采纳分析'}</span>
               </button>
             </li>)}
-          </ol> : <p>还没有保存的日精进，可以从下面写下第一条。</p>}
-        </section>
+          </ol>
+        </>}
+        {historyState === 'empty' && <div className="history-state history-state-empty">
+          <p className="history-state-heading" role="status">记录读取完成，目前还没有保存的日精进。</p>
+          <p>这不是读取失败。可以从一段真实经历或页面提供的虚构示例开始。</p>
+          <div className="record-actions">
+            <button type="button" disabled={!actualHistoryReady} onClick={() => {
+              setHistoryPreview(null);
+              requestAction({ type: 'new' });
+            }}>写下第一条日精进</button>
+          </div>
+        </div>}
+        {historyState === 'error' && <div className="error-panel history-state-error" role="alert">
+          <p className="history-state-heading">历史记录暂时没有读到</p>
+          <p>{historyErrorMessage}</p>
+          <button type="button" onClick={() => requestAction({ type: 'reload' })}>重新读取记录</button>
+        </div>}
+      </section>
 
+      {showJournalWorkspace && <>
         {editing && <form className="journal-form" onSubmit={handleSave} noValidate aria-busy={working}>
           <fieldset disabled={working}>
             <legend>{mode === 'edit' ? '修改这条日精进' : '写下今天的总结'}</legend>
