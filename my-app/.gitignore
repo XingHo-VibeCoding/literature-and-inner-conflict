@@ -5,3 +5,6 @@ dist/
 .env
 .env.*
 _logs/
+
+# Day 15 云函数上传包是本地生成文件，不提交。
+cloudfunctions/health.zip

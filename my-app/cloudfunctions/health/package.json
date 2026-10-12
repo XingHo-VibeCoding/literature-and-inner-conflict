@@ -1,0 +1,11 @@
+{
+  "name": "health",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "文学与内心冲突的 Day 15 健康检查 HTTP 云函数",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  }
+}
