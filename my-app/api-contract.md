@@ -1,10 +1,10 @@
-# 文学与内心冲突｜API 契约（Day 15）
+# 文学与内心冲突｜API 契约（Day 15 创建，Day 16 补充表结构）
 
-编制日期：2026-10-09；核对日期：2026-10-12（Asia/Shanghai）。状态：**已由用户确认的第 3 周接口契约**（2026-10-12确认）。
+编制日期：2026-10-09；接口契约核对日期：2026-10-12；Day 16 表结构补充日期：2026-10-13（Asia/Shanghai）。状态：**已由用户确认的第 3 周接口契约**；三表模型已确认，本地建表与种子脚本已生成；云端三表、种子输入副本两次执行及查询已核对；Day 16 三张表数据页截图已收到并核对通过、尚未提交，19项业务接口仍未实现。
 
 ## 1. 范围、事实与 AI 推导
 
-**用户要求：** 只实现 GET /api/health，返回精确服务 JSON；同时从第 2 周前端推导全部未来接口与表，今天只登记占位，不实现业务、建表或跨域。
+**Day 15 用户要求（历史范围）：** 只实现 GET /api/health，返回精确服务 JSON；同时从第 2 周前端推导全部未来接口与表，今天只登记占位，不实现业务、建表或跨域。
 
 **已执行事实（2026-10-12核对）：** health源文件已生成并本地验证，CloudBase云函数literature-health及/api/health路由已部署，实际公网GET返回200和指定JSON，用户浏览器也已确认JSON。以下其余19个业务接口全部是占位，没有部署、调用或改动现有前端。
 
@@ -28,7 +28,7 @@
 - 成功写入必须整笔事务完成后才返回。失败保留旧数据；客户端保留草稿。expectedRevision与textVersion不能混用。
 - AI只针对本次明确请求的原文或作品，不提交个人历史。失败不返回伪造分析；草稿可编辑、采纳或放弃。AI分析摘要1–300字符，问题1–2个，每个1–100；书本讲解与一个阅读问题分别非空、合计≤300。
 - 请求关联ID、记录版本、推荐条件变化时，前端作废迟到结果；页面等待30秒、模型处理预算25秒沿用旧设计规划，实际函数/网关超时待部署时核对。用户主动重试，新建requestId，不自动循环调用。
-- 今天不登记OPTIONS业务接口，不设置CORS，不接前端网络请求。
+- Day 15 未登记OPTIONS业务接口、未设置CORS、未接前端网络请求；Day 16 仅处理表结构与数据脚本，继续不写接口、不改前端。
 
 业务错误完整 JSON（虚构示例）：
 
@@ -86,9 +86,9 @@ fields仅在字段错误时提供；message不泄露内部堆栈、供应商凭�
 
 每条业务接口下面的错误清单均使用上述完整封套，code和HTTP状态按列出的对应值；health不使用此封套。
 
-## 3. 数据模型与逻辑表占位
+## 3. 数据模型与表结构
 
-这些是第三周的逻辑表／集合依据，今天不选择数据库类型、不写SQL、不建表。API使用camelCase字段；物理存储可映射但不能改变本契约的JSON形状。
+以下逻辑表在 Day 15 登记为占位。Day 16 用户确认使用 PostgreSQL 17.11，今日建 entries、reading_notes、favorites 三张表；物理结构与存储映射见第3.7节，本地脚本已生成，云端三表、种子输入副本两次执行、查询与截图均已核对。API使用camelCase字段；物理存储映射不改变本契约的JSON形状。
 
 | 逻辑表／资源 | 字段与关系 | 必须保留的约束 |
 | --- | --- | --- |
@@ -228,6 +228,74 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 ```
 
 私人书目状态为 `{favorite:boolean,hasNotes:boolean,latestNoteId:string|null}`；未读取个人数据的公开响应为null，不能以false伪装读取成功。当前会话Set<bookId>/Set<entryId>映射到未来targetType/targetId；这里不新增收藏页面。
+
+### 3.7 Day 16 物理表结构（2026-10-13）
+
+**用户确认：** 今日同时建 `entries`、`reading_notes`、`favorites` 三张表，每张至少五行虚构示例；数据库已开通 PostgreSQL 17.11、状态运行中（用户报告）。第①板块模型核对后，用户以「进入下一板块」授权第②板块。
+
+**当前事实：** [db/schema.sql](./db/schema.sql) 和 [db/seed.sql](./db/seed.sql) 已本地生成。用户随后明确授权AI代操作CloudBase，原话为「授权，这三张表的现有数据可以清空」。经授权在原项目 `ritchie`、环境 `ritchie-d5gd1dg1yd29783e8` 的PostgreSQL控制台核对：版本查询返回17.11，数据库为 `postgres-gbu0fd7s`，执行前public没有表。种子输入副本连续执行两次，控制台分别显示「执行成功」24ms与36ms；每次执行后查询三表行数均为5／5／5。
+
+**执行副本与本地文件的区别：** 为适配控制台SQL编辑器的注释提示，输入副本仅去掉以 `--` 开头的说明行；可执行SQL及 `COMMENT ON` 均与本地 `seed.sql` 一致，两次粘贴读回比较均为true。本地 `schema.sql` 与 `seed.sql` 没有因此修改；不声称含全部说明行的本地文件已逐字执行。独立 `schema.sql` 原版尚未单独重跑，已取得的是种子输入副本两次重建的成功证据。
+
+**已核对的云端查询：** `entries`、`reading_notes`、`favorites` 分别实际返回五行虚构数据。感悟与副本的同用户关联查询返回五行：001→003（active=true、preserve=false，副本revision／关联时版本为1／1）；002无关联；003→004（true／false，1／1）；004无关联；005→005（false／true，2／1，已取消但保留已改副本）。三条有关联记录的来源与上海日期匹配均为true，两条无关联记录的比较结果为空；当前启用关联仅两条。约束查询返回五行，包含三张表的PRIMARY KEY和 `favorites_entry_fkey`、`reading_notes_summary_entry_fkey` 两个外键。
+
+**截图与收尾状态（2026-10-13）：** 用户已提供favorites、entries、reading_notes三张CloudBase表数据页截图；三张均完整显示表名、五行虚构数据和底部共5条，已核对通过。entries与reading_notes右下角截图提示没有遮挡关键证据。用户已于2026-10-13说「今天做完了」，本段记录提交前验收状态；待用户核对三份Day16提交文件清单后才提交推送。业务接口仍全部未实现，种子状态与数据库查询核对不表示已运行删除、取消入库或版本保护等业务流程。
+
+物理列使用 snake_case，API继续返回本契约原有camelCase字段；`adopted_analysis` 与 `origin` 的JSON内部键也保持camelCase。存储映射不新增请求字段、不改变响应形状；`owner_id`仅内部使用。
+
+| entries 列 | PostgreSQL 类型 | 契约字段与约束 |
+| --- | --- | --- |
+| id | TEXT，非空 | id；主键，非空字符串（排除纯普通空格） |
+| owner_id | TEXT，非空 | 内部ownerId；非空字符串（排除纯普通空格）；与id另设联合唯一供外键引用 |
+| entry_date | DATE，非空 | entryDate；年份0001–9999，日期不晚于用户当地今天由未来接口校验 |
+| text | TEXT，非空 | text；至少含一个字符，保留原始空格与换行；有效字符1–5000按原契约校验 |
+| text_version | INTEGER，非空，默认1 | textVersion；至少1，原文版本 |
+| revision | INTEGER，非空，默认1 | revision；至少1，整条记录版本 |
+| created_at | TIMESTAMPTZ(3)，非空，默认当前时刻 | createdAt；有限的实际时刻，未来API输出UTC ISO 8601 |
+| updated_at | TIMESTAMPTZ(3)，非空，默认当前时刻 | updatedAt；由未来事务显式维护，不添加自动更新触发器 |
+| adopted_analysis | JSONB，可空 | adoptedAnalysis；SQL NULL映射API null；非空时检查对象及第3.2节必需键、字段基本类型、source=ai、正整数原文版本和1–2个非空字符串问题 |
+| origin | JSONB，可空 | origin；SQL NULL映射API null；非空时检查第3.4节来源对象及必要字符串；它是历史快照，不强制引用感悟表 |
+
+| reading_notes 列 | PostgreSQL 类型 | 契约字段与约束 |
+| --- | --- | --- |
+| id | TEXT，非空 | id；主键，非空字符串（排除纯普通空格） |
+| owner_id | TEXT，非空 | 内部ownerId；非空字符串（排除纯普通空格） |
+| book_id | TEXT，非空 | bookId；非空字符串（排除纯普通空格），未来接口核对发布的catalog.json |
+| body | TEXT，非空 | body；至少含一个字符，保留原始空格与换行；有效字符1–1000按原契约校验 |
+| revision | INTEGER，非空，默认1 | revision；至少1 |
+| created_at | TIMESTAMPTZ(3)，非空，默认当前时刻 | createdAt；有限的实际时刻 |
+| updated_at | TIMESTAMPTZ(3)，非空，默认当前时刻 | updatedAt；正文保存时刻，关联状态变化不自动更新 |
+| saved_at | TIMESTAMPTZ(3)，非空，默认当前时刻 | savedAt；原感悟保存时刻，入库日期按Asia/Shanghai取得 |
+| save_order | INTEGER，非空 | saveOrder；至少1；(owner_id,book_id,save_order)唯一，递增由未来事务维护 |
+| summary_entry_id | TEXT，可空 | summaryLink.entryId；非空时为非空字符串（排除纯普通空格） |
+| summary_active | BOOLEAN，可空 | summaryLink.active |
+| summary_linked_at | TIMESTAMPTZ(3)，可空 | summaryLink.linkedAt；存在时必须为有限时刻 |
+| summary_entry_revision_at_link | INTEGER，可空 | summaryLink.entryRevisionAtLink；存在时至少1 |
+| summary_preserve_on_cancel | BOOLEAN，可空 | summaryLink.preserveOnCancel |
+
+五个 `summary_*` 列必须全部为空（API `summaryLink:null`），或全部完整（按第3.3节组回对象）。完整关联中 `active=false` 必须有 `preserveOnCancel=true`；重新启用保留副本时允许两者均为true。同用户的非空 `summary_entry_id` 唯一，多条未入库感悟可以同时为空。
+
+| favorites 列 | PostgreSQL 类型 | 契约字段与约束 |
+| --- | --- | --- |
+| owner_id | TEXT，非空 | 内部ownerId；非空字符串（排除纯普通空格） |
+| target_type | TEXT，非空 | targetType；仅book/entry |
+| target_id | TEXT，非空 | targetId；非空字符串（排除纯普通空格） |
+| favorited_at | TIMESTAMPTZ(3)，非空，默认当前时刻 | favoritedAt；有限的首次收藏时刻 |
+| entry_target_id | TEXT，自动生成并存储 | 内部辅助列；target_type=entry时取target_id，作品收藏时为空；不接受手填，不出现在API响应 |
+
+`favorites` 以 `(owner_id,target_type,target_id)` 为复合主键，保证同用户同目标唯一。重复收藏true时保留首次时间、取消收藏false不误报错误，仍由未来接口按第5.9节执行。
+
+**外键与删除保护：**
+
+- `reading_notes(owner_id,summary_entry_id)` → `entries(owner_id,id)`，使用 `MATCH SIMPLE`，允许未入库时为空；删除与更新规则为 `RESTRICT`。删除Entry前，未来事务必须完整清空仍对应的五个关联字段；感悟原文保留。
+- `favorites(owner_id,entry_target_id)` → `entries(owner_id,id)`，使用 `MATCH SIMPLE`；删除规则为 `CASCADE`，仅清理被删Entry的收藏；更新规则为 `RESTRICT`。
+- `entries.origin.noteId` 是保留的来源快照，不设反向强制外键；删除感悟后Entry和origin仍保留。作品标识由未来服务核对书库，不新增books或标签表。
+
+**索引与重跑：** 三个列表索引分别对应第4.2、4.17、4.14节已登记排序。`schema.sql` 在事务内使用 `CREATE TABLE/INDEX IF NOT EXISTS`，重复执行保留数据并更新同样的中文注释；它不迁移与当前脚本不同的旧表结构。`seed.sql` 已生成可直接复制到控制台的自包含脚本，建表定义与schema一致。在单次事务中按favorites→reading_notes→entries删除三表，再重建并按entries→reading_notes→favorites插入；没有用DROP CASCADE扩大删除范围。执行会删除这三张表的原有数据，仅用于已确认可重置的测试数据库；重跑恢复同一组固定示例；去掉说明行的种子输入副本已在云端连续执行两次成功，独立schema.sql原版尚未单独重跑。
+
+**固定种子示例（已通过云端查询核对）：** 所有行属于虚构用户 `day16-demo-owner-001`，ID和2026-10-08至2026-10-12的时间固定。`entries` 为两条普通记录与三条独立阅读副本；`reading_notes` 为五条历史，包含同一本书两次保存、未入库、已入库、取消后保留已改副本；`favorites` 为三条作品收藏与两条日精进收藏。作品ID与标题来自现有catalog.json，正文和分析对象均明确标注虚构，没有新增文学引文或调用真实AI。本轮已通过种子输入副本的实际执行和查询核对云端三表；三张表数据页截图现已收到并核对通过；独立schema.sql原版单独重跑仍没有证据，Day16提交仍待用户按规则确认。
+
+**类型与验证边界：** 标识符的数据库检查仅排除空字符串与纯普通空格，更完整的ID合法性由未来接口核对。`TEXT`保留原文；`DATE`保留日历日；正整数分别表达版本和顺序；`TIMESTAMPTZ(3)`保存毫秒时刻，控制台显示受会话时区影响；`JSONB`保存独立对象；`BOOLEAN`保存状态。数据库只执行结构与必要约束，Unicode去空白后的长度、客户端时区今天、JSON时间字符串有效性、分析上下文、来源匹配、最新感悟、版本递增与原子事务保护仍须未来接口实现；今天不编写这些接口、触发器、权限策略或改前端。
 
 ## 4. 接口逐项定义
 
@@ -631,7 +699,10 @@ outcome固定枚举与响应关系：
 
 ## 7. 当前验证边界与交接
 
-- 今天只实现health；其余19项均未实现、未建表、未调用、未验证。
+- Day 15 仅实现health；其余19项业务接口仍未实现、未调用、未验证，前端仍未接入云端个人数据。
+- Day 16 已在用户明确授权清空三表现有数据后，由AI在原CloudBase环境控制台核对PostgreSQL 17.11；种子输入副本两次执行均成功，两次查询行数均为5／5／5，三表实际select和五行关联查询均已核对；主键与两个指定外键已查到。详见第3.7节，不将虚构种子当成用户经历或真实AI结果。
+- 云端输入副本只去掉以--开头的说明行，保留全部可执行SQL及COMMENT ON；两次粘贴读回核对一致。本地脚本没有因此改动，独立schema.sql原版尚未单独重跑；已核对的重复执行证据来自种子输入副本。
+- Day 16 三张表数据页截图已由用户提供并核对通过：favorites、entries、reading_notes均有完整表名、五行虚构数据和共5条计数。尚未提交；截图和种子查询不表示真实业务接口或保护流程已实现。
 - health本地与公网HTTP检查均已通过，用户浏览器JSON截图已取得；React构建及首页、JS、CSS公网检查已通过，用户前端浏览器截图已取得，同伴手机及两个页面刷新检查由用户人工确认。证据见本地日志。health完整地址栏JSON截图、前端公网页面截图及环境ID/额度/到期同框截图均已取得，由用户提供并已核对。
 - 前端mock公网地址：[打开页面](https://ritchie-d5gd1dg1yd29783e8-1502569246.tcloudbaseapp.com/)。前端仍使用原有mock及浏览器本地数据。
 - 契约中的逻辑表、持久收藏、分页、身份前置条件、时区header及HTTP拆分已于2026-10-12获用户确认，均属于未来实现约定；不把它们写成现有页面已支持。
