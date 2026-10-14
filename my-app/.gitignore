@@ -8,3 +8,7 @@ _logs/
 
 # Day 15 云函数上传包是本地生成文件，不提交。
 cloudfunctions/health.zip
+
+# Day 17 云函数上传包和部署依赖只保存在本地。
+cloudfunctions/reads.zip
+cloudfunctions/reads/node_modules/

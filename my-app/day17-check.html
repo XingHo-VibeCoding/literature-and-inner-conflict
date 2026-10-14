@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Day 17 真实读取核验｜文学与内心冲突</title>
+  <style>
+    :root { font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif; color:#252a28; background:#fafaf8; line-height:1.65; font-synthesis:none; accent-color:#365b43; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:280px; }
+    ::selection { color:#fff; background:#365b43; }
+    button,input { font:inherit; }
+    button { min-height:44px; padding:9px 16px; border:1px solid #829087; border-radius:6px; background:#fff; color:inherit; cursor:pointer; }
+    button:hover:not(:disabled) { background:#edf1ec; }
+    button:disabled { color:#626b63; background:#f0f1ed; cursor:not-allowed; }
+    button:focus-visible,input:focus-visible,a:focus-visible { outline:3px solid #426653; outline-offset:3px; }
+    .primary { background:#365b43; border-color:#365b43; color:#fff; }
+    .primary:hover:not(:disabled) { background:#294a35; }
+    .shell { width:min(100% - 48px,1120px); margin:auto; }
+    header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:24px 0; border-bottom:1px solid #dedfd9; }
+    .brand { color:inherit; font-weight:700; text-decoration:none; }
+    .day { color:#5b625d; font-size:.9rem; }
+    main { padding:30px 0 40px; }
+    h1 { margin:0 0 10px; font-size:clamp(1.6rem,3.5vw,2.1rem); line-height:1.4; }
+    h2 { margin:0 0 8px; font-size:1.15rem; }
+    h3 { margin:16px 0 6px; font-size:1rem; }
+    p { margin:0 0 10px; }
+    .intro { max-width:72ch; color:#555d57; }
+    .credential { margin:22px 0 18px; padding:18px 0; border-block:1px solid #dedfd9; }
+    label { display:block; font-weight:700; margin-bottom:8px; }
+    .token-row { display:flex; flex-wrap:wrap; gap:10px; }
+    input { width:440px; min-width:0; max-width:100%; flex:1 1 240px; padding:10px 12px; border:1px solid #929c93; border-radius:5px; color:#252a28; background:#fff; caret-color:#365b43; }
+    input::placeholder { color:#636b64; opacity:1; }
+    .help { color:#5b625d; font-size:.875rem; margin:9px 0 0; }
+    #credential-status { margin:10px 0 0; overflow-wrap:anywhere; }
+    .toolbar,.view-switch,.json-switch,.pagination-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+    .toolbar { margin:18px 0; }
+    .view-switch { border-bottom:1px solid #dedfd9; padding:0 0 14px; margin:22px 0; }
+    [aria-pressed="true"] { color:#365b43; border-color:#365b43; background:#edf1ec; font-weight:700; }
+    .status { color:#365b43; font-weight:700; }
+    .error { color:#982e2e; }
+    #operation-status { min-height:1.65em; margin-bottom:16px; }
+    .data-columns { display:grid; grid-template-columns:1fr 1.15fr; gap:28px; }
+    .data-section { min-width:0; }
+    .data-section + .data-section { padding-left:28px; border-left:1px solid #dedfd9; }
+    .endpoint { font-family:Consolas,"SFMono-Regular",monospace; font-size:.8rem; line-height:1.55; overflow-wrap:anywhere; color:#555d57; }
+    .request-meta { color:#5b625d; font-size:.82rem; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+    .record { border-top:1px solid #dedfd9; padding:14px 0; }
+    .original { white-space:pre-wrap; overflow-wrap:anywhere; font-size:1rem; }
+    .record-meta { font-size:.83rem; color:#555d57; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+    .empty { color:#5b625d; padding:14px 0; }
+    .fixture-result { color:#365b43; font-size:.875rem; margin:12px 0; }
+    .favorite-section,.change-section,.pagination-section { margin-top:24px; padding-top:20px; border-top:1px solid #dedfd9; }
+    .pagination-result { font-size:.875rem; margin-top:12px; overflow-wrap:anywhere; }
+    .json-switch { margin:16px 0; }
+    pre { margin:14px 0 0; padding:18px; border:1px solid #d9ddd7; border-radius:6px; background:#fff; font-size:.875rem; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; tab-size:2; font-family:Consolas,"SFMono-Regular",monospace; }
+    footer { padding:20px 0; border-top:1px solid #dedfd9; color:#5b625d; font-size:.8rem; }
+    [hidden] { display:none !important; }
+    @media (max-width:700px) { .shell { width:calc(100% - 32px); } main { padding-top:24px; } .data-columns { grid-template-columns:1fr; gap:22px; } .data-section + .data-section { padding:20px 0 0; border-left:0; border-top:1px solid #dedfd9; } .toolbar button { flex:1 1 180px; } pre { padding:12px; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header><a class="brand" href="/">文学与内心冲突</a><span class="day">Day 17 · 读取核验</span></header>
+    <main>
+      <h1>从真实数据库读取，保留每一次记录</h1>
+      <p class="intro">本页显示三个公网 GET 的实际返回。测试内容以「【虚构·Day17接口验证】」标注，来自数据库中的独立验证记录。</p>
+      <section class="credential" aria-labelledby="credential-title">
+        <form id="token-form">
+          <label id="credential-title" for="access-token">已有短期登录凭证</label>
+          <div class="token-row">
+            <input id="access-token" type="password" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="粘贴已有的 access_token" aria-describedby="token-help" required>
+            <button id="prepare-token" type="submit">临时准备凭证</button>
+          </div>
+          <p class="help" id="token-help">输入提交后立即清空，凭证仅保留在页面内存，用于请求已部署的读取接口。刷新或关闭页面后需要重新准备。</p>
+        </form>
+        <p id="credential-status" role="status">尚未准备登录凭证，未发起读取。</p>
+        <button id="reset-token" type="button" hidden>清除凭证与读取结果</button>
+      </section>
+      <div class="toolbar">
+        <button id="read-all" type="button" class="primary" disabled>读取三个接口</button>
+        <button id="refresh-entries" type="button" disabled>重新读取日精进</button>
+      </div>
+      <p id="operation-status" role="status" aria-live="polite">先准备凭证，再读取实际数据。</p>
+      <div class="view-switch" aria-label="切换核验视图">
+        <button id="view-data" type="button" aria-pressed="true">查看真实数据</button>
+        <button id="view-json" type="button" aria-pressed="false">查看接口 JSON</button>
+      </div>
+      <section id="data-view" aria-label="数据库实际返回的数据">
+        <div class="data-columns">
+          <section class="data-section" aria-labelledby="entries-heading">
+            <h2 id="entries-heading">日精进</h2>
+            <p class="endpoint" id="entries-url"></p>
+            <p class="request-meta" id="entries-meta">未读取。</p>
+            <div id="entries-content"><p class="empty">读取后显示本人记录的原文、日期与版本。</p></div>
+            <p class="fixture-result" id="entries-fixture">指定虚构记录尚未核对。</p>
+          </section>
+          <section class="data-section" aria-labelledby="notes-heading">
+            <h2 id="notes-heading">《瓦尔登湖》阅读感悟</h2>
+            <p class="endpoint" id="notes-url"></p>
+            <p class="request-meta" id="notes-meta">未读取。</p>
+            <div id="notes-content"><p class="empty">读取后显示每次感悟，按实际返回顺序排列。</p></div>
+            <p class="fixture-result" id="notes-fixture">两条独立感悟与最新条目尚未核对。</p>
+          </section>
+        </div>
+        <section class="favorite-section" aria-labelledby="favorites-heading">
+          <h2 id="favorites-heading">作品收藏</h2>
+          <p class="endpoint" id="favorites-url"></p>
+          <p class="request-meta" id="favorites-meta">未读取。</p>
+          <div id="favorites-content"><p class="empty">读取后显示实际收藏关联。</p></div>
+          <p class="fixture-result" id="favorites-fixture">book / walden 收藏尚未核对。</p>
+        </section>
+        <section class="change-section" aria-labelledby="change-heading">
+          <h2 id="change-heading">改一条真库数据后，再读同一条</h2>
+          <p id="change-result" aria-live="polite">首次成功读取指定虚构记录后，保存本页内存中的对照基线；再次读取时核对原文、版本、日期和更新时间。</p>
+        </section>
+        <section class="pagination-section" aria-labelledby="pagination-heading">
+          <h2 id="pagination-heading">每页一条，核对感悟历史</h2>
+          <div class="pagination-actions">
+            <button id="notes-page1" type="button" disabled>读取第一页 · limit=1</button>
+            <button id="notes-page2" type="button" disabled>读取第二页</button>
+          </div>
+          <div id="pagination-result" class="pagination-result" aria-live="polite">尚未读取分页，不以页面模板代替实际结果。</div>
+        </section>
+      </section>
+      <section id="json-view" aria-label="公网接口实际 JSON 返回" hidden>
+        <div class="json-switch" aria-label="选择接口返回">
+          <button id="json-entries" type="button" aria-pressed="true">日精进 GET</button>
+          <button id="json-notes" type="button" aria-pressed="false">感悟 GET</button>
+          <button id="json-favorites" type="button" aria-pressed="false">收藏 GET</button>
+        </div>
+        <h2 id="json-heading">日精进 GET 的实际响应</h2>
+        <p class="endpoint" id="json-url"></p>
+        <p class="request-meta" id="json-meta">未读取。</p>
+        <pre id="json-output" tabindex="0">尚未收到接口返回。</pre>
+      </section>
+    </main>
+    <footer>只读核验页 · 原文与日期来自实际 GET · 本页不存储凭证或写入业务数据</footer>
+  </div>
+  <script>
+  (() => {
+    'use strict';
+    const apiOrigin = 'https://ritchie-d5gd1dg1yd29783e8-1502569246.ap-shanghai.app.tcloudbase.com';
+    const paths = {
+      entries: '/api/entries?limit=20',
+      notes: '/api/books/walden/notes?limit=20',
+      favorites: '/api/favorites?targetType=book&limit=20'
+    };
+    const labels = { entries: '日精进', notes: '感悟', favorites: '收藏' };
+    const fixtureId = 'day17-test-entry-001';
+    const firstNoteId = 'day17-test-note-002';
+    const secondNoteId = 'day17-test-note-001';
+    const originalEntry = '【虚构·Day17接口验证】今天读完一页，我暂时记下一个问题。';
+    const originalNotes = new Map([
+      [firstNoteId, '【虚构·Day17接口验证】第二次感悟：我又留下一个不同问题。'],
+      [secondNoteId, '【虚构·Day17接口验证】第一次感悟：我想核对自己的安排。']
+    ]);
+    const byId = (id) => document.getElementById(id);
+    let token = '';
+    let busy = false;
+    let selectedJson = 'entries';
+    let baseline = null;
+    let notesCursor = null;
+    let page1 = null;
+    let page2 = null;
+    const results = {};
+    const controllers = new Set();
+    const setText = (id, value) => { byId(id).textContent = value; };
+    const make = (tag, value, className) => {
+      const node = document.createElement(tag);
+      if (value !== undefined) node.textContent = String(value);
+      if (className) node.className = className;
+      return node;
+    };
+    const displayDate = (value) => {
+      const date = new Date(value);
+      return Number.isFinite(date.getTime())
+        ? date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) + '（上海）'
+        : '日期无效';
+    };
+    const validEnvelope = (payload) => payload !== null && typeof payload === 'object'
+      && !Array.isArray(payload)
+      && Object.keys(payload).sort().join(',') === 'data,error,ok'
+      && typeof payload.ok === 'boolean';
+    const validList = (data) => data !== null && typeof data === 'object'
+      && Array.isArray(data.items) && Number.isSafeInteger(data.total) && data.total >= 0
+      && data.page !== null && typeof data.page === 'object'
+      && Number.isSafeInteger(data.page.limit) && data.page.limit >= 1 && data.page.limit <= 100
+      && typeof data.page.hasMore === 'boolean'
+      && (data.page.nextCursor === null || typeof data.page.nextCursor === 'string');
+    const meta = (result) => result
+      ? 'HTTP ' + (result.status || '未取得') + ' · ' + result.state
+        + ' · 请求编号：' + (result.requestId || '响应未提供')
+      : '未读取。';
+    function syncControls() {
+      for (const id of ['read-all', 'refresh-entries', 'notes-page1']) byId(id).disabled = busy || !token;
+      byId('notes-page2').disabled = busy || !token || !notesCursor || !!page2;
+      byId('prepare-token').disabled = busy;
+      byId('access-token').disabled = busy;
+      byId('reset-token').disabled = busy;
+      byId('read-all').textContent = busy ? '正在读取，请稍候…' : '读取三个接口';
+    }
+    function showStatus(message, error = false) {
+      setText('operation-status', message);
+      byId('operation-status').className = error ? 'error' : 'status';
+    }
+    function renderJson() {
+      const result = results[selectedJson];
+      setText('json-heading', labels[selectedJson] + ' GET 的实际响应');
+      setText('json-url', result?.url || apiOrigin + paths[selectedJson]);
+      setText('json-meta', meta(result));
+      setText('json-output', result?.payload
+        ? JSON.stringify(result.payload, null, 2)
+        : result?.state || '尚未收到接口返回。');
+      for (const kind of Object.keys(labels)) {
+        byId('json-' + kind).setAttribute('aria-pressed', String(kind === selectedJson));
+      }
+    }
+    function renderRecords(kind, data) {
+      const content = byId(kind + '-content');
+      content.replaceChildren();
+      if (!data.items.length) {
+        content.append(make('p', '读取成功，当前筛选没有本人数据。', 'empty'));
+      }
+      for (const item of data.items) {
+        const article = make('article', undefined, 'record');
+        if (kind === 'entries') {
+          article.append(make('p', item.text, 'original'));
+          article.append(make('p', '日期 ' + item.entryDate + ' · textVersion ' + item.textVersion
+            + ' · revision ' + item.revision, 'record-meta'));
+          article.append(make('p', '记录 ID：' + item.id, 'record-meta'));
+        } else if (kind === 'notes') {
+          article.append(make('p', item.body, 'original'));
+          article.append(make('p', '保存 ' + displayDate(item.savedAt) + ' · saveOrder ' + item.saveOrder
+            + ' · revision ' + item.revision, 'record-meta'));
+          article.append(make('p', '感悟 ID：' + item.id, 'record-meta'));
+        } else {
+          article.append(make('p', item.targetType + ' / ' + item.targetId, 'original'));
+          article.append(make('p', '收藏时间 ' + displayDate(item.favoritedAt), 'record-meta'));
+        }
+        content.append(article);
+      }
+      const suffix = kind === 'notes' ? ' · 最新条目：' + (data.latestNoteId || '无') : '';
+      content.append(make('p', '筛选总数 ' + data.total + ' · 本次返回 ' + data.items.length
+        + ' 条 · limit ' + data.page.limit + suffix, 'record-meta'));
+    }
+    function updateFixture(kind, data) {
+      if (kind === 'entries') {
+        const item = data.items.find((entry) => entry.id === fixtureId);
+        setText('entries-fixture', item
+          ? '指定虚构记录已读到；' + (item.entryDate === '2026-10-13' ? '原日期保持。' : '日期与预期不符。')
+          : '未读到指定虚构记录，尚不能核验。');
+        if (!item) {
+          setText('change-result', '本次没有指定记录，无法核对变化。');
+          return;
+        }
+        if (!baseline) {
+          baseline = { text: item.text, textVersion: item.textVersion, revision: item.revision,
+            entryDate: item.entryDate, updatedAt: item.updatedAt };
+          setText('change-result', '已记录首次读取基线：textVersion ' + item.textVersion
+            + '、revision ' + item.revision + '、日期 ' + item.entryDate
+            + '。' + (item.text === originalEntry ? '原始虚构正文匹配。' : '基线正文与原始虚构样例不同。')
+            + ' 数据库改一行后，点击“重新读取日精进”。');
+        } else {
+          const textChanged = item.text !== baseline.text;
+          const versionChanged = item.textVersion === baseline.textVersion + 1;
+          const revisionChanged = item.revision === baseline.revision + 1;
+          const dateKept = item.entryDate === baseline.entryDate;
+          const timeChanged = item.updatedAt !== baseline.updatedAt;
+          const passed = textChanged && versionChanged && revisionChanged && dateKept && timeChanged;
+          setText('change-result', (passed ? '改行跟随核验通过：' : '改行跟随尚未通过：')
+            + '正文' + (textChanged ? '已改变' : '未改变')
+            + '；textVersion ' + baseline.textVersion + ' → ' + item.textVersion
+            + '（' + (versionChanged ? '+1' : '未满足 +1') + '）'
+            + '；revision ' + baseline.revision + ' → ' + item.revision
+            + '（' + (revisionChanged ? '+1' : '未满足 +1') + '）'
+            + '；日期' + (dateKept ? '未变' : '改变')
+            + '；更新时间' + (timeChanged ? '已改变' : '未改变') + '。');
+          byId('change-result').className = passed ? 'status' : '';
+        }
+      } else if (kind === 'notes') {
+        const selected = data.items.filter((note) => originalNotes.has(note.id));
+        const matching = selected.length === 2 && selected.every((note) => note.body === originalNotes.get(note.id));
+        const orderKept = selected[0]?.id === firstNoteId && selected[1]?.id === secondNoteId;
+        setText('notes-fixture', matching && orderKept && data.latestNoteId === firstNoteId
+          ? '两次虚构原文均保留；002 在前、001 在后；最新条目为 002。'
+          : '两条原文、返回顺序或最新条目尚未全部核对通过，请查看实际数据。');
+      } else {
+        setText('favorites-fixture', data.items.some((item) => item.targetType === 'book' && item.targetId === 'walden')
+          ? '已读取指定 book / walden 收藏。' : '未读到指定 book / walden 收藏。');
+      }
+    }
+    function renderResult(kind) {
+      const result = results[kind];
+      setText(kind + '-url', result?.url || apiOrigin + paths[kind]);
+      setText(kind + '-meta', meta(result));
+      byId(kind + '-meta').className = 'request-meta' + (result?.success === false ? ' error' : '');
+      if (result?.success) {
+        renderRecords(kind, result.payload.data);
+        updateFixture(kind, result.payload.data);
+      } else if (result) {
+        byId(kind + '-content').replaceChildren(make('p', result.state + '。读取未成功，请核对后再操作。', 'error'));
+        setText(kind + '-fixture', '本次读取未成功，不能记为核验通过。');
+      }
+      if (selectedJson === kind) renderJson();
+    }
+    async function request(path) {
+      if (!token) throw new Error('请先准备当前有效的登录凭证。');
+      const url = new URL(path, apiOrigin);
+      if (url.origin !== apiOrigin) throw new Error('请求主机与项目网关不一致，已停止。');
+      const controller = new AbortController();
+      controllers.add(controller);
+      const timer = setTimeout(() => controller.abort(), 12000);
+      const result = { url: url.href, status: null, requestId: null, payload: null, success: false, state: '读取未完成' };
+      try {
+        const response = await fetch(url.href, { method: 'GET', headers: {
+          Accept: 'application/json', Authorization: 'Bearer ' + token
+        }, cache: 'no-store', credentials: 'omit', redirect: 'error', signal: controller.signal });
+        result.status = response.status;
+        result.requestId = response.headers.get('X-Request-Id');
+        let payload;
+        try { payload = await response.json(); } catch { result.state = '响应不是有效 JSON'; return result; }
+        if (!validEnvelope(payload)) { result.state = '响应不符合 ok、data、error 三键契约'; return result; }
+        result.payload = payload;
+        if (!response.ok || !payload.ok || payload.error !== null || !validList(payload.data)) {
+          result.state = typeof payload.error?.code === 'string'
+            ? payload.error.code + '：' + String(payload.error.message || '读取失败')
+            : 'HTTP 状态或列表响应不符合成功契约';
+          return result;
+        }
+        result.success = true;
+        result.state = '读取成功';
+        return result;
+      } catch {
+        result.state = controller.signal.aborted ? '读取超时或页面已关闭' : '网络请求未完成';
+        return result;
+      } finally {
+        clearTimeout(timer);
+        controllers.delete(controller);
+      }
+    }
+    async function run(action) {
+      if (busy) return;
+      busy = true;
+      syncControls();
+      try { await action(); } catch (error) { showStatus(error.message || '读取未完成。', true); }
+      finally { busy = false; syncControls(); }
+    }
+    async function readKind(kind) {
+      showStatus('正在读取' + labels[kind] + '…');
+      results[kind] = await request(paths[kind]);
+      renderResult(kind);
+      if (!results[kind].success) {
+        showStatus(labels[kind] + '读取失败：' + results[kind].state + '。已停止后续读取。', true);
+        return false;
+      }
+      showStatus(labels[kind] + ' HTTP ' + results[kind].status + '，读取成功。');
+      return true;
+    }
+    function clearResults() {
+      for (const kind of Object.keys(labels)) {
+        delete results[kind];
+        setText(kind + '-url', apiOrigin + paths[kind]);
+        setText(kind + '-meta', '未读取。');
+        byId(kind + '-meta').className = 'request-meta';
+        byId(kind + '-content').replaceChildren(make('p', '尚未读取实际数据。', 'empty'));
+        setText(kind + '-fixture', '尚未核对。');
+      }
+      baseline = notesCursor = page1 = page2 = null;
+      setText('change-result', '尚未保存基线，需要先成功读取指定虚构记录。');
+      byId('change-result').className = '';
+      setText('pagination-result', '尚未读取分页。');
+      renderJson();
+    }
+    byId('token-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const input = byId('access-token');
+      const supplied = input.value.trim();
+      input.value = '';
+      if (busy) return;
+      if (!/^[\x21-\x7e]{1,8192}$/.test(supplied)) {
+        token = '';
+        setText('credential-status', '请只粘贴 access_token 的单行字符串，不粘贴脚本或登录 JSON。');
+        syncControls(); return;
+      }
+      token = supplied;
+      clearResults();
+      if (!token) { setText('credential-status', '凭证为空，请重新准备。'); syncControls(); return; }
+      byId('token-form').hidden = true;
+      byId('reset-token').hidden = false;
+      setText('credential-status', '凭证已临时准备。点击读取后，以接口实际返回确认身份与数据。');
+      showStatus('尚未发起业务请求。');
+      syncControls();
+      byId('read-all').focus();
+    });
+    byId('reset-token').addEventListener('click', () => {
+      token = '';
+      byId('access-token').value = '';
+      clearResults();
+      byId('token-form').hidden = false;
+      byId('reset-token').hidden = true;
+      setText('credential-status', '凭证与读取结果已清除。');
+      showStatus('先准备凭证，再读取实际数据。');
+      syncControls();
+      byId('access-token').focus();
+    });
+    byId('read-all').addEventListener('click', () => run(async () => {
+      for (const kind of ['entries', 'notes', 'favorites']) if (!await readKind(kind)) return;
+      showStatus('三个公网 GET 均读取成功，页面内容来自这三次实际返回。');
+    }));
+    byId('refresh-entries').addEventListener('click', () => run(() => readKind('entries')));
+    function renderPagination() {
+      const container = byId('pagination-result');
+      container.replaceChildren();
+      for (const [label, result] of [['第一页', page1], ['第二页', page2]]) {
+        if (!result) continue;
+        container.append(make('p', label + ' · ' + meta(result)));
+        container.append(make('p', result.url, 'endpoint'));
+        if (result.success) {
+          const data = result.payload.data;
+          container.append(make('p', '实际记录 ID：' + (data.items.map((item) => item.id).join('、') || '空列表')
+            + ' · 最新条目：' + (data.latestNoteId || '无') + ' · total ' + data.total + ' · limit ' + data.page.limit));
+          for (const item of data.items) container.append(make('p', item.body, 'original'));
+        }
+      }
+      if (page1?.success && page2?.success) {
+        const first = page1.payload.data;
+        const second = page2.payload.data;
+        const passed = first.items.length === 1 && second.items.length === 1
+          && first.items[0].id === firstNoteId && second.items[0].id === secondNoteId
+          && first.items[0].body === originalNotes.get(firstNoteId)
+          && second.items[0].body === originalNotes.get(secondNoteId)
+          && first.latestNoteId === firstNoteId && second.latestNoteId === firstNoteId
+          && first.page.limit === 1 && second.page.limit === 1
+          && first.page.hasMore === true && second.page.hasMore === false;
+        container.append(make('p', passed
+          ? '分页核验通过：第一页 002、第二页 001，两页最新条目均为 002，两次原文都保留。'
+          : '分页结果尚未满足指定虚构场景，请按实际 ID、原文与最新条目核对。', passed ? 'status' : 'error'));
+      }
+    }
+    byId('notes-page1').addEventListener('click', () => run(async () => {
+      notesCursor = null;
+      page2 = null;
+      showStatus('正在读取感悟第一页…');
+      page1 = await request('/api/books/walden/notes?limit=1');
+      if (page1.success && page1.payload.data.page.hasMore) notesCursor = page1.payload.data.page.nextCursor;
+      renderPagination();
+      showStatus(page1.success ? '感悟第一页 HTTP ' + page1.status + '，已显示真实返回。'
+        : '感悟第一页失败：' + page1.state + '。', !page1.success);
+    }));
+    byId('notes-page2').addEventListener('click', () => run(async () => {
+      if (!notesCursor) throw new Error('没有服务端返回的下一页游标，请先读取第一页。');
+      showStatus('正在使用服务端游标读取感悟第二页…');
+      page2 = await request('/api/books/walden/notes?limit=1&cursor=' + encodeURIComponent(notesCursor));
+      renderPagination();
+      showStatus(page2.success ? '感悟第二页 HTTP ' + page2.status + '，已显示真实返回。'
+        : '感悟第二页失败：' + page2.state + '。', !page2.success);
+    }));
+    function showView(json) {
+      byId('data-view').hidden = json;
+      byId('json-view').hidden = !json;
+      byId('view-data').setAttribute('aria-pressed', String(!json));
+      byId('view-json').setAttribute('aria-pressed', String(json));
+      if (json) renderJson();
+    }
+    byId('view-data').addEventListener('click', () => showView(false));
+    byId('view-json').addEventListener('click', () => showView(true));
+    for (const kind of Object.keys(labels)) {
+      setText(kind + '-url', apiOrigin + paths[kind]);
+      byId('json-' + kind).addEventListener('click', () => { selectedJson = kind; renderJson(); });
+    }
+    window.addEventListener('pagehide', () => {
+      token = '';
+      byId('access-token').value = '';
+      for (const controller of controllers) controller.abort();
+      clearResults();
+      byId('token-form').hidden = false;
+      byId('reset-token').hidden = true;
+      setText('credential-status', '页面已离开，凭证与读取结果已清除。');
+      syncControls();
+    });
+    syncControls();
+    renderJson();
+  })();
+  </script>
+</body>
+</html>

@@ -1,12 +1,14 @@
 # 文学与内心冲突｜API 契约（Day 15 创建，Day 16 补充表结构）
 
-编制日期：2026-10-09；接口契约核对日期：2026-10-12；Day 16 表结构补充日期：2026-10-13（Asia/Shanghai）。状态：**已由用户确认的第 3 周接口契约**；三表模型已确认，本地建表与种子脚本已生成；云端三表、种子输入副本两次执行及查询已核对；Day 16 三张表数据页截图已收到并核对通过、尚未提交，19项业务接口仍未实现。
+编制日期：2026-10-09；接口契约核对日期：2026-10-12；Day16表结构补充日期：2026-10-13；Day17验证更新日期：2026-10-14（Asia/Shanghai）。状态：**已由用户确认的第3周接口契约**。Day17三个列表GET已实现、部署并通过真实测试用户HTTP200核对；格式A、范围A、身份A，29项本地模拟检查通过。entries改库后新正文和版本2已同步到接口与核验页；两次感悟原文及收藏均保留，最终两张截图已核对。用户已确认仅提交12个Day17文件。其他16项业务接口仍为未来占位；历史证据保留文末。
 
 ## 1. 范围、事实与 AI 推导
 
 **Day 15 用户要求（历史范围）：** 只实现 GET /api/health，返回精确服务 JSON；同时从第 2 周前端推导全部未来接口与表，今天只登记占位，不实现业务、建表或跨域。
 
-**已执行事实（2026-10-12核对）：** health源文件已生成并本地验证，CloudBase云函数literature-health及/api/health路由已部署，实际公网GET返回200和指定JSON，用户浏览器也已确认JSON。以下其余19个业务接口全部是占位，没有部署、调用或改动现有前端。
+**Day 15 历史事实（2026-10-12核对）：** health源文件已生成并本地验证，CloudBase云函数literature-health及/api/health路由已部署，实际公网GET返回200和指定JSON，用户浏览器也已确认JSON。当时其余19个业务接口全部是占位，没有部署、调用或改动现有前端。
+
+**Day 17 用户确认与当前范围（2026-10-13）：** 用户确认「格式 A，范围 A，身份 A」：业务响应统一为恰好三个键的 `{ok,data,error}`；实现 `GET /api/entries`、`GET /api/books/:bookId/notes`、`GET /api/favorites` 三个列表读取接口；使用 CloudBase 真实用户身份核验。此次只读取现有 PostgreSQL 表，不改表结构、不写业务写入接口、不新增登录页面或认证接口。代码状态见第4.2、4.14、4.17节，部署和真库验证仍须独立核对。
 
 **现有页面：** 原文与感悟存 IndexedDB；分析和讲解是明确标注的固定虚构演示；书本和日总结收藏是会话状态，刷新重置；当前列表没有分页。首页 homeMock 是固定虚构样例，不读个人记录。本契约不新增首页真实聚合接口、登录页面、管理后台、分析历史或修改往期感悟。
 
@@ -16,25 +18,28 @@
 
 ## 2. 公共约定
 
-- 线上使用 HTTPS。health 成功和错误独立；业务接口成功为 `{requestId,data}`，失败为 `{requestId,error}`。
+- 线上使用 HTTPS。health成功和错误维持第4.1节独立形状；用户于 Day 17 确认业务响应统一为恰好三个键的 `{ok,data,error}`。成功为 `{ok:true,data:业务数据,error:null}`，失败为 `{ok:false,data:null,error:错误对象}`；HTTP状态码仍按契约使用，不把失败伪装成200。业务响应正文不再包含requestId。
 - 请求 body 为 application/json，最大64 KiB。GET/DELETE无body；DELETE的expectedRevision放query。拒绝未登记字段，不静默截断原文。
 - 用户文字按去首尾空白后的 Unicode 码点数校验，但原始空格、换行与日期原样保存。AI文字与原文分字段，不自动替换。
 - 普通日精进的当前日期校验依据设备本地日历。未来写接口约定由前端附带 `X-Client-Time-Zone` IANA时区（本项目常用Asia/Shanghai，省略默认Asia/Shanghai），服务端按该时区的日历今天校验，日期本身不转UTC。无效时区返回400 INVALID_INPUT。此传输约定尚未接入；前端仍保持现行设备日期规则。
 - 记录日期为有效YYYY-MM-DD且不能晚于上述今天；时间戳由服务端生成UTC ISO 8601字符串。感悟入库日期固定由savedAt按Asia/Shanghai转换，与普通手填日期不同。
-- 私人接口必须有经验证的身份（未来 `Authorization: Bearer <token>`）。ownerId仅由可信身份确定，不能由body/query指定。无身份返回401；找不到本人资源（包括他人ID）返回404。当前没有登录实现；身份方案是上线私人接口的前置条件，不为今天增加认证接口。
+- 私人接口必须有经验证的身份：`Authorization: Bearer <用户 access_token>`。ownerId仅由可信身份确定，不能由body/query指定；不信客户端自行填写的用户ID请求头。无身份或无效身份返回401；找不到本人资源（包括他人ID）返回404。Day 17 不新增登录页面或认证接口，浏览器验证需已有 CloudBase 真实用户会话提供有效用户access_token。
+- Day 17 真实身份核验：HTTP函数向 `GET https://${CLOUDBASE_ENV_ID}.api.tcloudbasegateway.com/auth/v1/user/me` 主动发送该Bearer用户access_token，并仅以认证服务验证后返回的可信 `sub` 作为数据库 `owner_id`。`CLOUDBASE_ENV_ID` 由服务端环境配置确定，不由客户端指定；不能仅解码未经验证的token或直接相信透传用户头。认证服务读取失败不伪装成空列表或已登录；返回不泄露内部信息的失败响应。实现见 [auth.js](./cloudfunctions/reads/auth.js)。
+- Day 16 固定虚构种子属于 `day16-demo-owner-001`，它与 CloudBase 真实用户的uid/sub不同。新账号若没有本人数据库数据，应得到成功空列表；不能把真实账号固定映射到虚构owner，也不能自动导入浏览器本地记录或将种子冒充本人数据。真库验证只能由用户在控制台为本人可信uid准备明确标注的虚构验证数据。
 - 公开书库接口如提供无效身份凭证也返回401，不把无效身份悄悄当公开用户。只有health为无需身份的健康检查。
-- 每次请求带／返回随机requestId。AI请求必须body提供新requestId并原样回传；其他业务请求由服务端生成。requestId用于关联，不是账号身份。
+- 每次业务响应通过 `X-Request-Id` 响应头返回关联ID，正文只含ok、data、error。其他业务请求的关联ID由服务端随机生成，不信客户端传入的关联ID。未来AI请求body仍必须提供新requestId，并由响应头 `X-Request-Id` 原样回传；AI请求体、generationRequestId与已采纳分析的内部字段不因此改名。requestId用于关联，不是账号身份。
 - 列表query：limit默认20，整数1–100；cursor为上一次nextCursor的不透明串。响应含items、筛选后的total、page:{limit,nextCursor,hasMore}；最后一页nextCursor=null/hasMore=false。空列表200，不把读取失败写成空列表。游标必须绑定当前用户、筛选与排序；无效返回400。分页是未来约定，现有页面尚未分页。
 - 成功写入必须整笔事务完成后才返回。失败保留旧数据；客户端保留草稿。expectedRevision与textVersion不能混用。
 - AI只针对本次明确请求的原文或作品，不提交个人历史。失败不返回伪造分析；草稿可编辑、采纳或放弃。AI分析摘要1–300字符，问题1–2个，每个1–100；书本讲解与一个阅读问题分别非空、合计≤300。
 - 请求关联ID、记录版本、推荐条件变化时，前端作废迟到结果；页面等待30秒、模型处理预算25秒沿用旧设计规划，实际函数/网关超时待部署时核对。用户主动重试，新建requestId，不自动循环调用。
-- Day 15 未登记OPTIONS业务接口、未设置CORS、未接前端网络请求；Day 16 仅处理表结构与数据脚本，继续不写接口、不改前端。
+- Day 15 历史范围：未登记OPTIONS业务接口、未设置CORS、未接前端网络请求；Day 16 历史范围：仅处理表结构与数据脚本，不写接口、不改前端。Day 17 当前范围包含三项列表GET代码、部署与验证；不把其他接口或现有前端记作已接入云端个人数据。
 
-业务错误完整 JSON（虚构示例）：
+业务错误完整 JSON（虚构示例，响应头另含 `X-Request-Id: demo-request-001`）：
 
 ```json
 {
-  "requestId": "demo-request-001",
+  "ok": false,
+  "data": null,
   "error": {
     "code": "INVALID_INPUT",
     "message": "原文不能为空。",
@@ -48,11 +53,12 @@
 
 fields仅在字段错误时提供；message不泄露内部堆栈、供应商凭证或其他用户信息。不可重试输入/版本错误为retryable:false；频率/暂时服务故障可true，但由用户主动决定重试。日志不记原文、感悟、AI正文、密钥或完整请求头。
 
-书库版本不一致时，错误对象必须返回当前发布版本，便于前端核对；这是未来接口约定，不是今天已实现的错误响应：
+书库版本不一致时，错误对象必须返回当前发布版本，便于前端核对；这是未来接口约定，不是 Day 17 三项列表GET已经实现的错误响应。响应头另含 `X-Request-Id: demo-request-001`：
 
 ```json
 {
-  "requestId": "demo-request-001",
+  "ok": false,
+  "data": null,
   "error": {
     "code": "CATALOG_VERSION_MISMATCH",
     "message": "书库版本已变化，请先核对未保存内容，再重新读取书库。",
@@ -239,7 +245,7 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 
 **已核对的云端查询：** `entries`、`reading_notes`、`favorites` 分别实际返回五行虚构数据。感悟与副本的同用户关联查询返回五行：001→003（active=true、preserve=false，副本revision／关联时版本为1／1）；002无关联；003→004（true／false，1／1）；004无关联；005→005（false／true，2／1，已取消但保留已改副本）。三条有关联记录的来源与上海日期匹配均为true，两条无关联记录的比较结果为空；当前启用关联仅两条。约束查询返回五行，包含三张表的PRIMARY KEY和 `favorites_entry_fkey`、`reading_notes_summary_entry_fkey` 两个外键。
 
-**截图与收尾状态（2026-10-13）：** 用户已提供favorites、entries、reading_notes三张CloudBase表数据页截图；三张均完整显示表名、五行虚构数据和底部共5条，已核对通过。entries与reading_notes右下角截图提示没有遮挡关键证据。用户已于2026-10-13说「今天做完了」，本段记录提交前验收状态；待用户核对三份Day16提交文件清单后才提交推送。业务接口仍全部未实现，种子状态与数据库查询核对不表示已运行删除、取消入库或版本保护等业务流程。
+**截图与收尾状态（2026-10-13）：** 用户已提供favorites、entries、reading_notes三张CloudBase表数据页截图；三张均完整显示表名、五行虚构数据和底部共5条，已核对通过。entries与reading_notes右下角截图提示没有遮挡关键证据。用户已于2026-10-13说「今天做完了」，本段记录提交前验收状态；待用户核对三份Day16提交文件清单后才提交推送。Day 16 收尾时业务接口仍全部未实现；Day 17 的代码状态见第4节。种子状态与数据库查询核对不表示已运行删除、取消入库或版本保护等业务流程。
 
 物理列使用 snake_case，API继续返回本契约原有camelCase字段；`adopted_analysis` 与 `origin` 的JSON内部键也保持camelCase。存储映射不新增请求字段、不改变响应形状；`owner_id`仅内部使用。
 
@@ -299,13 +305,13 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 
 ## 4. 接口逐项定义
 
-下列JSON是实际传输形状样例，没有省略号。除health之外，均为**未来占位**。每项列出自己的特定错误；发生基础请求格式错误时也遵守第2节413/415约定。
+下列JSON是实际传输形状样例，没有省略号；业务响应已统一为第2节的三键形状。health维持已验证的独立响应；Day 17 三项列表GET的代码已实现，29项本地虚构数据检查已通过（含当前安全诊断），三条路由已保存，无Bearer公网HTTP均401；entries带身份真库已通过，其余两GET和最终含地址栏截图待验证；其余16项业务接口仍为**未来占位**。普通业务响应样例另含 `X-Request-Id: demo-request-001` 响应头；两项未来AI响应头使用各自请求body中的requestId。每项列出自己的特定错误；发生基础请求格式错误时也遵守第2节413/415约定。
 
 ### 4.1 GET /api/health
 
 - 用途：公网最小健康检查。
 - 页面依据：`cloudfunctions/health/index.js`。
-- 身份／状态：公开，无登录。今天唯一有代码的接口；2026-10-12已通过公网GET 200及指定JSON验证。
+- 身份／状态：公开，无登录。Day 15 唯一有代码的接口；2026-10-12已通过公网GET 200及指定JSON验证。Day 17 三项列表GET的状态另列，不改变本health响应。
 - 已验证公网地址：[打开 health](https://ritchie-d5gd1dg1yd29783e8-1502569246.ap-shanghai.app.tcloudbase.com/api/health)。
 - 参数：无 path/body 参数。没有业务查询参数；当前实现忽略查询串。路径必须恰好 /api/health。
 
@@ -319,6 +325,8 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 
 ### 4.2 GET /api/entries
 
+- 实现状态：**已实现并通过Day17主任务验证：云函数与公网路由已部署；真实HTTP200、原文/日期映射、控制台改单行后新正文与版本2返回、页面显示均已核对；本地29项检查通过。limit1真库跨页及跨用户隔离未实测**。代码见 [index.js](./cloudfunctions/reads/index.js)、[service.js](./cloudfunctions/reads/service.js)、[auth.js](./cloudfunctions/reads/auth.js)；部署与人工验证见 [deploy-day17.md](./deploy-day17.md)。
+
 - 用途：日精进／总结库列表读取；不可遗漏的记录表读接口。
 - 页面依据：`src/services/localStore.js readEntries；src/pages/JournalPage.jsx 历史列表`。
 - 身份／状态：私人。
@@ -327,12 +335,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"items":[{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","adoptedAnalysis":null,"origin":null}],"total":1,"page":{"limit":20,"nextCursor":null,"hasMore":false}}}
+{"ok":true,"data":{"items":[{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","adoptedAnalysis":null,"origin":null}],"total":1,"page":{"limit":20,"nextCursor":null,"hasMore":false}},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；500 INTERNAL_ERROR。空结果仍200，items:[]、total:0，不以空数组代替读取失败。
 
 ### 4.3 GET /api/entries/:entryId
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：回看／重新读取单条日精进。
 - 页面依据：`src/services/localStore.js readEntry；src/pages/JournalPage.jsx`。
@@ -342,12 +352,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","adoptedAnalysis":null,"origin":null}}
+{"ok":true,"data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","adoptedAnalysis":null,"origin":null},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 ENTRY_NOT_FOUND；500 INTERNAL_ERROR。
 
 ### 4.4 POST /api/entries
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：新建日精进，保留用户原文和日期。
 - 页面依据：`src/services/localStore.js createEntry；shared/validation.js validateEntry`。
@@ -363,12 +375,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 201。
 
 ```json
-{"requestId":"demo-request-001","data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","adoptedAnalysis":null,"origin":null}}
+{"ok":true,"data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","adoptedAnalysis":null,"origin":null},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT（fields可含entryDate/text）；401 UNAUTHENTICATED；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。
 
 ### 4.5 PATCH /api/entries/:entryId
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：修改当前记录；原文变化时原子清除旧分析。
 - 页面依据：`src/services/entryModel.js reviseEntry；src/services/localStore.js updateEntry`。
@@ -384,12 +398,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我又记下一个问题。\n","textVersion":2,"revision":2,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:03:00.000Z","adoptedAnalysis":null,"origin":null}}
+{"ok":true,"data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我又记下一个问题。\n","textVersion":2,"revision":2,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:03:00.000Z","adoptedAnalysis":null,"origin":null},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 ENTRY_NOT_FOUND；409 VERSION_CONFLICT；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。
 
 ### 4.6 DELETE /api/entries/:entryId
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：删除日精进及其仍对应的入库关联。
 - 页面依据：`src/services/localStore.js deleteEntry`。
@@ -399,17 +415,19 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"deleted":true,"entryId":"demo-entry-001"}}
+{"ok":true,"data":{"deleted":true,"entryId":"demo-entry-001"},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 ENTRY_NOT_FOUND；409 VERSION_CONFLICT；409 NOTE_LINK_CONFLICT；500 WRITE_FAILED。不借删除恢复已删资源。
 
 ### 4.7 PUT /api/entries/:entryId/adopted-analysis
 
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
+
 - 用途：用户核对并采纳已生成的分析草稿。
 - 页面依据：`src/pages/AnalysisPanel.jsx adopt；src/services/analysisModel.js adoptDemoAnalysis 的版本保护`。
 - 身份／状态：私人。真实AI采纳为未来占位；当前demo仍只本地。
-- 参数：path：entryId 必需。body：expectedRevision、sourceTextVersion、generationRequestId、summary、questions均必需。前两项为≥1整数；generationRequestId取POST /api/analysis成功的requestId；summary为1–300字符；questions为1–2项，每项1–100字符。source由服务端继承生成上下文，客户端不能把demo改成ai。核对草稿归属、记录版本与原文版本，写入只改变adoptedAnalysis/revision/updatedAt，不改变text或entryDate。
+- 参数：path：entryId 必需。body：expectedRevision、sourceTextVersion、generationRequestId、summary、questions均必需。前两项为≥1整数；generationRequestId取POST /api/analysis成功响应头X-Request-Id的值；summary为1–300字符；questions为1–2项，每项1–100字符。source由服务端继承生成上下文，客户端不能把demo改成ai。核对草稿归属、记录版本与原文版本，写入只改变adoptedAnalysis/revision/updatedAt，不改变text或entryDate。
 
 请求JSON示例：
 
@@ -420,12 +438,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":2,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:02:00.000Z","adoptedAnalysis":{"source":"ai","generationRequestId":"demo-analysis-001","sourceTextVersion":1,"summary":"【虚构·形状样例】这次阅读后留下了一个问题。","questions":["这个问题与你的哪次经历有关？"],"adoptedAt":"2026-10-08T01:02:00.000Z"},"origin":null}}
+{"ok":true,"data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":2,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:02:00.000Z","adoptedAnalysis":{"source":"ai","generationRequestId":"demo-analysis-001","sourceTextVersion":1,"summary":"【虚构·形状样例】这次阅读后留下了一个问题。","questions":["这个问题与你的哪次经历有关？"],"adoptedAt":"2026-10-08T01:02:00.000Z"},"origin":null},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 ENTRY_NOT_FOUND；409 VERSION_CONFLICT；409 ANALYSIS_CONTEXT_MISMATCH；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。未生成、失效或属于别的记录的草稿不能采纳。
 
 ### 4.8 POST /api/analysis
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：针对本次已保存原文生成可编辑分析草稿。
 - 页面依据：`../TECH_DESIGN.md §6.2；src/pages/AnalysisPanel.jsx 的未来真实AI按钮`。
@@ -438,15 +458,17 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 {"requestId":"demo-analysis-001","entryId":"demo-entry-001","textVersion":1,"text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n"}
 ```
 
-成功：HTTP 200。
+成功：HTTP 200。响应头 `X-Request-Id: demo-analysis-001` 与请求body的requestId一致。
 
 ```json
-{"requestId":"demo-analysis-001","data":{"entryId":"demo-entry-001","textVersion":1,"baseRevision":1,"source":"ai","summary":"【虚构·形状样例】这次阅读后留下了一个问题。","questions":["这个问题与你的哪次经历有关？"]}}
+{"ok":true,"data":{"entryId":"demo-entry-001","textVersion":1,"baseRevision":1,"source":"ai","summary":"【虚构·形状样例】这次阅读后留下了一个问题。","questions":["这个问题与你的哪次经历有关？"]},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 ENTRY_NOT_FOUND；409 VERSION_CONFLICT；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；429 RATE_LIMITED；502 AI_INVALID_OUTPUT；503 AI_UNAVAILABLE；504 AI_TIMEOUT。
 
 ### 4.9 GET /api/catalog
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：读取书库版本、类型与两组选择标签。
 - 页面依据：`shared/catalog.json；src/services/catalog.js bookCategories/situationTags/directionTags`。
@@ -456,12 +478,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"catalogVersion":"2026-09-23.2","categories":[{"id":"all","label":"全部"},{"id":"literature","label":"文学"},{"id":"philosophy","label":"哲学"},{"id":"humanities-social-sciences","label":"人文社科"}],"situationTags":[{"id":"rethink-life","label":"正在重新思考怎样生活"},{"id":"relationship-confusion","label":"在人际关系中感到困惑"},{"id":"beyond-the-self","label":"觉得困扰不只来自自己"}],"directionTags":[{"id":"review-choices","label":"重新审视生活中的重要选择"},{"id":"simpler-life","label":"尝试更简朴的生活"},{"id":"social-perspective","label":"从社会背景理解经历"}]}}
+{"ok":true,"data":{"catalogVersion":"2026-09-23.2","categories":[{"id":"all","label":"全部"},{"id":"literature","label":"文学"},{"id":"philosophy","label":"哲学"},{"id":"humanities-social-sciences","label":"人文社科"}],"situationTags":[{"id":"rethink-life","label":"正在重新思考怎样生活"},{"id":"relationship-confusion","label":"在人际关系中感到困惑"},{"id":"beyond-the-self","label":"觉得困扰不只来自自己"}],"directionTags":[{"id":"review-choices","label":"重新审视生活中的重要选择"},{"id":"simpler-life","label":"尝试更简朴的生活"},{"id":"social-perspective","label":"从社会背景理解经历"}]},"error":null}
 ```
 
 错误返回：500 INTERNAL_ERROR；有身份凭证但无效时401 UNAUTHENTICATED。
 
 ### 4.10 GET /api/books
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：按类型读取书单及“我的收藏／有备注”视图。
 - 页面依据：`src/pages/BooksPage.jsx books；src/services/catalog.js listBooks`。
@@ -471,12 +495,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"catalogVersion":"2026-09-23.2","items":[{"book":{"id":"walden","title":"瓦尔登湖","author":"亨利·戴维·梭罗","categories":["literature","philosophy"],"literaryForms":["散文"],"intro":"【响应字段样例】实际简介返回已核对的人工书库文字。","topics":["简朴生活与个人需要"],"sources":[{"name":"Penguin Random House：Walden 作品资料","url":"https://www.penguinrandomhouse.com/books/469576/walden-by-henry-david-thoreau/"}],"displayOrder":2,"situationMatches":[{"tagId":"rethink-life","basis":"【响应字段样例】返回人工整理的处境匹配依据。"}],"directionMatches":[{"tagId":"simpler-life","basis":"【响应字段样例】返回人工整理的改变方向依据。"}]},"personalState":null}],"total":1,"page":{"limit":20,"nextCursor":null,"hasMore":false}}}
+{"ok":true,"data":{"catalogVersion":"2026-09-23.2","items":[{"book":{"id":"walden","title":"瓦尔登湖","author":"亨利·戴维·梭罗","categories":["literature","philosophy"],"literaryForms":["散文"],"intro":"【响应字段样例】实际简介返回已核对的人工书库文字。","topics":["简朴生活与个人需要"],"sources":[{"name":"Penguin Random House：Walden 作品资料","url":"https://www.penguinrandomhouse.com/books/469576/walden-by-henry-david-thoreau/"}],"displayOrder":2,"situationMatches":[{"tagId":"rethink-life","basis":"【响应字段样例】返回人工整理的处境匹配依据。"}],"directionMatches":[{"tagId":"simpler-life","basis":"【响应字段样例】返回人工整理的改变方向依据。"}]},"personalState":null}],"total":1,"page":{"limit":20,"nextCursor":null,"hasMore":false}},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；500 INTERNAL_ERROR。已验证身份时personalState为{"favorite":false,"hasNotes":false,"latestNoteId":null}；公开读取为null，不能假冒已读取私人状态。
 
 ### 4.11 GET /api/books/:bookId
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：作品详情、核对来源及自己的阅读状态。
 - 页面依据：`src/services/catalog.js getBook；src/pages/BookReadingPanel.jsx`。
@@ -486,12 +512,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"catalogVersion":"2026-09-23.2","book":{"id":"walden","title":"瓦尔登湖","author":"亨利·戴维·梭罗","categories":["literature","philosophy"],"literaryForms":["散文"],"intro":"【响应字段样例】实际简介返回已核对的人工书库文字。","topics":["简朴生活与个人需要"],"sources":[{"name":"Penguin Random House：Walden 作品资料","url":"https://www.penguinrandomhouse.com/books/469576/walden-by-henry-david-thoreau/"}],"displayOrder":2,"situationMatches":[{"tagId":"rethink-life","basis":"【响应字段样例】返回人工整理的处境匹配依据。"}],"directionMatches":[{"tagId":"simpler-life","basis":"【响应字段样例】返回人工整理的改变方向依据。"}]},"personalState":null}}
+{"ok":true,"data":{"catalogVersion":"2026-09-23.2","book":{"id":"walden","title":"瓦尔登湖","author":"亨利·戴维·梭罗","categories":["literature","philosophy"],"literaryForms":["散文"],"intro":"【响应字段样例】实际简介返回已核对的人工书库文字。","topics":["简朴生活与个人需要"],"sources":[{"name":"Penguin Random House：Walden 作品资料","url":"https://www.penguinrandomhouse.com/books/469576/walden-by-henry-david-thoreau/"}],"displayOrder":2,"situationMatches":[{"tagId":"rethink-life","basis":"【响应字段样例】返回人工整理的处境匹配依据。"}],"directionMatches":[{"tagId":"simpler-life","basis":"【响应字段样例】返回人工整理的改变方向依据。"}]},"personalState":null},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED（提供无效凭证）；404 BOOK_NOT_FOUND；500 INTERNAL_ERROR。私人状态形状同GET /api/books。
 
 ### 4.12 POST /api/recommendations
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：按当前处境与改变方向生成两组人工标签匹配推荐。
 - 页面依据：`src/services/catalog.js buildRecommendations；src/pages/BooksPage.jsx`。
@@ -507,12 +535,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"catalogVersion":"2026-09-23.2","conditions":{"category":"all","situationTagId":"rethink-life","directionTagId":"simpler-life"},"situationLabel":"正在重新思考怎样生活","directionLabel":"尝试更简朴的生活","groups":[{"id":"mirror","title":"映照当下","tagLabel":"正在重新思考怎样生活","totalMatches":1,"items":[{"bookId":"walden","baseReason":"【虚构·形状样例】这里返回人工整理的本次处境联系。"}]},{"id":"change","title":"探索改变","tagLabel":"尝试更简朴的生活","totalMatches":1,"items":[{"bookId":"walden","baseReason":"【虚构·形状样例】这里返回人工整理的本次方向联系。"}]}]}}
+{"ok":true,"data":{"catalogVersion":"2026-09-23.2","conditions":{"category":"all","situationTagId":"rethink-life","directionTagId":"simpler-life"},"situationLabel":"正在重新思考怎样生活","directionLabel":"尝试更简朴的生活","groups":[{"id":"mirror","title":"映照当下","tagLabel":"正在重新思考怎样生活","totalMatches":1,"items":[{"bookId":"walden","baseReason":"【虚构·形状样例】这里返回人工整理的本次处境联系。"}]},{"id":"change","title":"探索改变","tagLabel":"尝试更简朴的生活","totalMatches":1,"items":[{"bookId":"walden","baseReason":"【虚构·形状样例】这里返回人工整理的本次方向联系。"}]}]},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED（提供无效身份凭证）；409 CATALOG_VERSION_MISMATCH；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 INTERNAL_ERROR。无匹配仍200，两组items:[]且totalMatches:0；不能换书或借收藏决定推荐。
 
 ### 4.13 POST /api/book-explanation
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：用户主动请求某次推荐中某组作品的讲解。
 - 页面依据：`../TECH_DESIGN.md §6.2；src/services/explanationDemo.js；src/pages/BooksPage.jsx`。
@@ -525,15 +555,17 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 {"requestId":"demo-explanation-001","catalogVersion":"2026-09-23.2","bookId":"walden","group":"mirror","category":"all","situationTagId":"rethink-life","directionTagId":"simpler-life"}
 ```
 
-成功：HTTP 200。
+成功：HTTP 200。响应头 `X-Request-Id: demo-explanation-001` 与请求body的requestId一致。
 
 ```json
-{"requestId":"demo-explanation-001","data":{"source":"ai","catalogVersion":"2026-09-23.2","bookId":"walden","group":"mirror","category":"all","situationTagId":"rethink-life","directionTagId":"simpler-life","explanation":"【虚构·形状样例】实际讲解须说明作品与本次处境的联系，并有可核对来源。","readingQuestion":"【虚构】你想核对哪一项日常安排？"}}
+{"ok":true,"data":{"source":"ai","catalogVersion":"2026-09-23.2","bookId":"walden","group":"mirror","category":"all","situationTagId":"rethink-life","directionTagId":"simpler-life","explanation":"【虚构·形状样例】实际讲解须说明作品与本次处境的联系，并有可核对来源。","readingQuestion":"【虚构】你想核对哪一项日常安排？"},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 BOOK_NOT_FOUND；409 CATALOG_VERSION_MISMATCH；409 RECOMMENDATION_CONTEXT_MISMATCH（不属于本组或条件）；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；429 RATE_LIMITED；502 AI_INVALID_OUTPUT；503 AI_UNAVAILABLE；504 AI_TIMEOUT。讲解临时展示，不写个人历史表。
 
 ### 4.14 GET /api/favorites
+
+- 实现状态：**已实现并通过Day17主任务验证：已部署；真实HTTP200，完整JSON的book/walden关联、favoritedAt、total1及limit20末页字段与三键封套均已截图核对；本地29项检查通过**。代码见 [index.js](./cloudfunctions/reads/index.js)、[service.js](./cloudfunctions/reads/service.js)、[auth.js](./cloudfunctions/reads/auth.js)；部署与人工验证见 [deploy-day17.md](./deploy-day17.md)。
 
 - 用途：读取未来收藏状态，支持书单收藏视图恢复。
 - 页面依据：`src/pages/BooksPage.jsx 收藏视图；JournalPage.jsx 会话收藏按钮；src/services/temporaryFavorite.js`。
@@ -543,12 +575,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"items":[{"targetType":"book","targetId":"walden","favoritedAt":"2026-10-08T01:00:00.000Z"}],"total":1,"page":{"limit":20,"nextCursor":null,"hasMore":false}}}
+{"ok":true,"data":{"items":[{"targetType":"book","targetId":"walden","favoritedAt":"2026-10-08T01:00:00.000Z"}],"total":1,"page":{"limit":20,"nextCursor":null,"hasMore":false}},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；500 INTERNAL_ERROR。该列表仅返回收藏关联；作品或记录详情由其读取接口获得。
 
 ### 4.15 PUT /api/books/:bookId/favorite
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：明确设置作品收藏或取消目标状态。
 - 页面依据：`src/pages/BookReadingPanel.jsx 收藏按钮；src/services/temporaryFavorite.js`。
@@ -564,12 +598,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"targetType":"book","targetId":"walden","favorite":true,"favoritedAt":"2026-10-08T01:00:00.000Z"}}
+{"ok":true,"data":{"targetType":"book","targetId":"walden","favorite":true,"favoritedAt":"2026-10-08T01:00:00.000Z"},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 BOOK_NOT_FOUND；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。取消成功同形状，favorite:false、favoritedAt:null。
 
 ### 4.16 PUT /api/entries/:entryId/favorite
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：设置日总结收藏目标状态。
 - 页面依据：`src/pages/JournalPage.jsx toggleFavorite；src/services/temporaryFavorite.js`。
@@ -585,12 +621,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"targetType":"entry","targetId":"demo-entry-001","favorite":true,"favoritedAt":"2026-10-08T01:00:00.000Z"}}
+{"ok":true,"data":{"targetType":"entry","targetId":"demo-entry-001","favorite":true,"favoritedAt":"2026-10-08T01:00:00.000Z"},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 ENTRY_NOT_FOUND；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。取消为favorite:false、favoritedAt:null。
 
 ### 4.17 GET /api/books/:bookId/notes
+
+- 实现状态：**已实现并通过Day17主任务验证：已部署；真实HTTP200，两次感悟原文完整保留，002在前/001在后，total2、saveOrder2/1及latestNoteId002均已截图核对；本地29项检查通过。limit1真库跨页未实测**。代码见 [index.js](./cloudfunctions/reads/index.js)、[service.js](./cloudfunctions/reads/service.js)、[auth.js](./cloudfunctions/reads/auth.js)；部署与人工验证见 [deploy-day17.md](./deploy-day17.md)。
 
 - 用途：读取当前作品全部阅读备注与感悟历史。
 - 页面依据：`src/services/localStore.js readNoteHistory；src/pages/BookReadingPanel.jsx 往期列表`。
@@ -600,12 +638,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"bookId":"walden","latestNoteId":"demo-note-001","items":[{"id":"demo-note-001","bookId":"walden","body":"【虚构·契约样例】我想重新核对哪些安排确有必要。\n","revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","savedAt":"2026-10-08T01:00:00.000Z","saveOrder":1,"summaryLink":null}],"total":1,"page":{"limit":20,"nextCursor":null,"hasMore":false}}}
+{"ok":true,"data":{"bookId":"walden","latestNoteId":"demo-note-001","items":[{"id":"demo-note-001","bookId":"walden","body":"【虚构·契约样例】我想重新核对哪些安排确有必要。\n","revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","savedAt":"2026-10-08T01:00:00.000Z","saveOrder":1,"summaryLink":null}],"total":1,"page":{"limit":20,"nextCursor":null,"hasMore":false}},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 BOOK_NOT_FOUND；500 INTERNAL_ERROR。无感悟为items:[]、latestNoteId:null、total:0。
 
 ### 4.18 POST /api/books/:bookId/notes
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：每次保存追加一条独立感悟，保留过去原文。
 - 页面依据：`src/services/localStore.js appendNote；src/services/readingModel.js createHistoryNote`。
@@ -621,12 +661,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 201。
 
 ```json
-{"requestId":"demo-request-001","data":{"id":"demo-note-001","bookId":"walden","body":"【虚构·契约样例】我想重新核对哪些安排确有必要。\n","revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","savedAt":"2026-10-08T01:00:00.000Z","saveOrder":1,"summaryLink":null}}
+{"ok":true,"data":{"id":"demo-note-001","bookId":"walden","body":"【虚构·契约样例】我想重新核对哪些安排确有必要。\n","revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","savedAt":"2026-10-08T01:00:00.000Z","saveOrder":1,"summaryLink":null},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 BOOK_NOT_FOUND；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。
 
 ### 4.19 DELETE /api/notes/:noteId
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：删除该作品最新的一条感悟，保护往期与入库副本。
 - 页面依据：`src/services/localStore.js deleteHistoryNote；src/pages/BookReadingPanel.jsx`。
@@ -636,12 +678,14 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"deleted":true,"noteId":"demo-note-001","bookId":"walden","latestNoteId":null}}
+{"ok":true,"data":{"deleted":true,"noteId":"demo-note-001","bookId":"walden","latestNoteId":null},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 NOTE_NOT_FOUND；409 VERSION_CONFLICT；409 NOTE_NOT_LATEST；500 WRITE_FAILED。不能删除历史条目后再顺手删总结。
 
 ### 4.20 PUT /api/notes/:noteId/summary-link
+
+- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
 
 - 用途：将任意历史感悟入库，或取消其入库关联。
 - 页面依据：`src/services/localStore.js setNoteInSummary；src/services/readingModel.js createNoteSummary/canRemoveNoteSummary`。
@@ -657,7 +701,7 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 成功：HTTP 200。
 
 ```json
-{"requestId":"demo-request-001","data":{"note":{"id":"demo-note-001","bookId":"walden","body":"【虚构·契约样例】我想重新核对哪些安排确有必要。\n","revision":2,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","savedAt":"2026-10-08T01:00:00.000Z","saveOrder":1,"summaryLink":{"entryId":"demo-note-entry-001","active":true,"linkedAt":"2026-10-08T01:05:00.000Z","entryRevisionAtLink":1,"preserveOnCancel":false}},"entry":{"id":"demo-note-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】我想重新核对哪些安排确有必要。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:05:00.000Z","updatedAt":"2026-10-08T01:05:00.000Z","adoptedAnalysis":null,"origin":{"type":"reading-note","noteId":"demo-note-001","bookId":"walden","bookTitle":"瓦尔登湖","noteSavedAt":"2026-10-08T01:00:00.000Z"}},"outcome":"added"}}
+{"ok":true,"data":{"note":{"id":"demo-note-001","bookId":"walden","body":"【虚构·契约样例】我想重新核对哪些安排确有必要。\n","revision":2,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","savedAt":"2026-10-08T01:00:00.000Z","saveOrder":1,"summaryLink":{"entryId":"demo-note-entry-001","active":true,"linkedAt":"2026-10-08T01:05:00.000Z","entryRevisionAtLink":1,"preserveOnCancel":false}},"entry":{"id":"demo-note-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】我想重新核对哪些安排确有必要。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:05:00.000Z","updatedAt":"2026-10-08T01:05:00.000Z","adoptedAnalysis":null,"origin":{"type":"reading-note","noteId":"demo-note-001","bookId":"walden","bookTitle":"瓦尔登湖","noteSavedAt":"2026-10-08T01:00:00.000Z"}},"outcome":"added"},"error":null}
 ```
 
 错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 NOTE_NOT_FOUND；409 VERSION_CONFLICT；409 NOTE_LINK_CONFLICT；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。outcome仅added/reused/removed/preserved-edited/unchanged；取消时entry可null或保留的Entry，按第5节规则处理。
@@ -699,12 +743,54 @@ outcome固定枚举与响应关系：
 
 ## 7. 当前验证边界与交接
 
-- Day 15 仅实现health；其余19项业务接口仍未实现、未调用、未验证，前端仍未接入云端个人数据。
+- Day 15 历史事实：当时仅实现health，其余19项业务接口未实现、未调用、未验证。
+- Day17当前代码状态：三个列表GET已实现、部署并通过真实测试用户HTTP200核对；29项本地模拟检查通过。entries改单行跟随及核验页新正文/版本2、两次完整感悟原文与最新ID、book/walden收藏完整JSON均已核对，最终两图已收到。主React仍用本地数据，独立day17-check.html显示公网实际响应；真实limit1跨页与跨用户隔离未实测，其余16项业务接口未实现。Day17提交范围已获用户确认。详见[Day17部署说明](./deploy-day17.md)。
 - Day 16 已在用户明确授权清空三表现有数据后，由AI在原CloudBase环境控制台核对PostgreSQL 17.11；种子输入副本两次执行均成功，两次查询行数均为5／5／5，三表实际select和五行关联查询均已核对；主键与两个指定外键已查到。详见第3.7节，不将虚构种子当成用户经历或真实AI结果。
 - 云端输入副本只去掉以--开头的说明行，保留全部可执行SQL及COMMENT ON；两次粘贴读回核对一致。本地脚本没有因此改动，独立schema.sql原版尚未单独重跑；已核对的重复执行证据来自种子输入副本。
 - Day 16 三张表数据页截图已由用户提供并核对通过：favorites、entries、reading_notes均有完整表名、五行虚构数据和共5条计数。尚未提交；截图和种子查询不表示真实业务接口或保护流程已实现。
 - health本地与公网HTTP检查均已通过，用户浏览器JSON截图已取得；React构建及首页、JS、CSS公网检查已通过，用户前端浏览器截图已取得，同伴手机及两个页面刷新检查由用户人工确认。证据见本地日志。health完整地址栏JSON截图、前端公网页面截图及环境ID/额度/到期同框截图均已取得，由用户提供并已核对。
 - 前端mock公网地址：[打开页面](https://ritchie-d5gd1dg1yd29783e8-1502569246.tcloudbaseapp.com/)。前端仍使用原有mock及浏览器本地数据。
-- 契约中的逻辑表、持久收藏、分页、身份前置条件、时区header及HTTP拆分已于2026-10-12获用户确认，均属于未来实现约定；不把它们写成现有页面已支持。
+- 契约中的逻辑表、持久收藏、分页、身份前置条件、时区header及HTTP拆分已于2026-10-12获用户确认。Day 17 三项列表GET落实读取、分页与真实用户身份核验的代码；其余写入、AI、时区header传输及前端接入仍是未来实现约定，不把它们写成现有页面已支持。
 - 第3周以本契约为唯一接口依据；若后续变化，先确认再改契约，不由实现擅自改变字段或保护规则。
-- 部署操作、截图与Day15收尾见[部署说明](./deploy-day15.md)。不提交dist、health.zip或本地_logs，不把.env或密钥写进契约。
+- Day 15 部署操作、截图与收尾见[Day 15部署说明](./deploy-day15.md)；Day 17 三项读取接口部署、浏览器带身份验证与控制台改行验证见[Day 17部署说明](./deploy-day17.md)。不提交dist、部署ZIP或本地_logs，不把.env、用户access_token、密钥或数据库连接串写进契约。
+
+- Day 17 旧版（PG协议直连）本地验证证据：在 Node.js 24.19.0 执行 node --test cloudfunctions/reads/reads.test.js，19项通过、0失败。检查原文与日期映射、分页作用域、参数绑定、认证拒绝、HTTP封套和上游结果变化；全部使用明确虚构数据，不能替代CloudBase真实凭证、PostgreSQL SQL执行或Node20云端验证。测试文件见 [reads.test.js](./cloudfunctions/reads/reads.test.js)。
+
+- Day 17 第②板块数据准备已核对（2026-10-13）：用户人工创建并报告登录核验通过的测试账号，其ID为字符串2110018353410285570。用户在现有PostgreSQL控制台执行独立虚构新增脚本，随后合并查询截图共4行：entries指定ID1行、reading_notes两个指定ID2行、favorites的book/walden1行；日期均2026-10-13、归属一致。截图正文截断处另经同一查询结果的只读完整文本核对，三段虚构正文与脚本一致。此事实仅证明测试数据已在真库，不证明本函数的三条参数化SQL、真实身份联调、公网GET或前端接库已验证；这些仍待第③/④板块。过程由用户执行，AI未代写数据库；未新增业务写接口、改表或重跑seed。
+
+- Day 17 第③板块连接层调整（2026-10-14，继续Day17）：用户选择原话「B」。当前读取函数已改用CloudBase官方HTTPS参数化SQL接口，入口显式读取服务端CLOUDBASE_APIKEY，调用固定cloudbase_read_only_user角色；db.js仅允许本项目三个固定SELECT，SQL与parameters分开传递，数组响应包装成rows。客户端用户access_token仍仅由auth.js核验，不用管理员Key代替用户身份。service.js、auth.js、schema.sql和seed.sql内容与调整前一致，三GET路径、分页、字段和三键响应不变，不增加业务写入或任意SQL代理。
+- 当前本地验证证据：node --test cloudfunctions/reads/reads.test.js，Node.js24.19.0，26项通过、0失败，新增覆盖HTTPS固定地址/只读角色、三查询参数原样传递、凭证隔离、格式/权限/网络/超时错误及无秘密泄露。全部模拟上游；不作为管理员真实凭证、三表只读权限、CTE/JSONB真实返回或平台总执行时限的证据。
+- 当前运行文件新增 [db.js](./cloudfunctions/reads/db.js)，移除pg生产依赖；本地reads.zip已重打包为七个根目录运行文件，内容与当前源码一致，启动LF/0755，11306字节。连接层调整时要求实际上传重新选择新ZIP，管理员Key准备和函数创建/部署当时尚未执行。其后在用户明确授权电脑操作后完成了以下云端步骤，仍属Day17第③板块。
+
+- Day 17 第③板块云端部署证据（2026-10-14）：用户明确授权代理操作CloudBase，并选择函数名literature-reads；同环境已创建HTTP云函数，资源标识lam-fb1jcmvh，Node.js20.19、监听9000、内存256MB、初始化65秒、执行时限3秒。当前上传内容含HTTPS适配db.js及其他运行文件。创建后在线编辑器解压显示未部署改动；没有修改云端源码，部署并确认$LATEST后状态正常、显示“与已部署代码一致”。上述是代码部署证据，不表示公网路由已经配置。
+- 该部署小步仅执行一次控制台HTTP启动检查：GET /api/entries，无Bearer、无请求体，返回HTTP401，Body恰为 {"ok":false,"data":null,"error":{"code":"UNAUTHENTICATED","message":"请使用注册用户的登录凭证。","retryable":false}}。与契约错误响应一致，证明HTTP服务已启动并处理该读取路径的身份检查；未调用另外两条路径，也没有使用真实用户令牌读取数据。不能据此确认管理员Key的SQL权限、身份上游连通、真实CTE/JSONB响应、完整认证加SQL在3秒内返回或公网接口成功。
+- 日志边界：日志页要求确认服务条款与付费模式后开通，当前未开通。控制台测试附带的SearchClsLog查询提示ResourceNotFound.TopicNotExist；此为日志查询失败，同次HTTP响应已独立返回401。没有为消除该提示开通付费日志，实际启动日志仍未取得。本轮以HTTP响应证明启动，不记录为“启动日志已验证”。
+- 后端配置：CLOUDBASE_ENV_ID及随机CURSOR_SECRET已填写；API Key选择器刷新后选中服务端Key literature-reads-day17，控制台显示到期2026-11-13 10:44:55。CLOUDBASE_APIKEY由平台关联注入，选择器显示名称不等于应将名称或KeyId当作凭证值。本契约不保存任何秘密；真实SQL鉴权仍待带用户身份的读库验证。网关配置及无Bearer公网HTTP401检查现已完成；带身份读取、浏览器JSON截图、前端接入、真库改行跟随和日终提交推送均未完成。
+
+- Day 17第③板块网关证据（2026-10-14）：用户明确「确认保存三条路由」后，保存/api/entries、/api/favorites、/api/books三个前缀，均启用并关联literature-reads，路径透传与跨域开启、网关前置身份认证关闭，函数自身真实Bearer验证保持。没有改动/api/health原绑定。实际网关为https://ritchie-d5gd1dg1yd29783e8-1502569246.ap-shanghai.app.tcloudbase.com，从控制台链接读取。
+- 公网HTTP证据：无Bearer的GET /api/entries、/api/favorites、/api/books/walden/notes分别返回401；三次正文均为 {"ok":false,"data":null,"error":{"code":"UNAUTHENTICATED","message":"请先登录再读取个人数据。","retryable":false}}。含JSON类型、Bearer挑战和X-Request-Id；仅证明缺少登录凭证时的公网转发与身份拦截，不表示成功读取数据库。
+- 浏览器证据限制：entries默认域名访问提示点击一次后仍停留；公网HTTP响应含Content-Disposition: attachment。官方默认域名机制见[说明](https://docs.cloudbase.net/service/alias)。未取得浏览器内联JSON截图，不声称已满足当天两张截图；未购买/绑定自定义域名或尝试去除提示。真实身份读库、SQL权限、3秒完整链路、分页/隔离、改行跟随与前端显示仍待第④板块。本步停下等用户继续，不提交或推送。
+- Day17第④板块首条联调实际失败（2026-10-14）：用户先报告「登录 200，UID 一致」，再提供GET /api/entries?limit=20实际HTTP500截图。响应仍为三键封套，error为INTERNAL_ERROR/message「读取失败，请核对服务端配置或稍后重试。」/retryable:false。该精确提示对应db.js的SQL上游非成功状态分支，按当前代码说明用户身份核验后进入SQL调用，但未取得成功数据；不记为真库验证通过。
+- 一次只读权限元数据查询显示同环境当前SQL会话中的cloudbase_read_only_user精确角色不存在：三个既有表的readonly_role均NULL、role_exists均false；其它权限false由缺角色分支产生，不能写成已存在角色但缺授权。仍缺HTTPS SQL上游具体HTTP状态和脱敏错误代码，尚不能断言本次失败唯一原因；未建角色、GRANT、改SQL执行角色、开付费日志或改表。完整证据及拟定安全诊断见deploy-day17.md文末，计划等待用户确认，不修改本契约响应结构。
+- Day17第④板块安全诊断变更（2026-10-14）：用户明确同意后，仅调整db.js上游非成功响应的error.message，包含安全HTTP数字及固定代码白名单；未知/非JSON标为UNCLASSIFIED，不透传供应商原消息、details、SQL/参数、请求编号或凭证。业务顶层与error字段、error.code INTERNAL_ERROR、retryable、真实用户身份、三条参数化SQL和只读role保持。仅补诊断，不将此变更记为权限修复。
+- 本次本地检查29项/29通过/0失败（模拟身份与SQL）；初次8项本机HTTP受EACCES限制，批准外部执行后原套全部通过。当前reads.zip已重打包为11737字节、七根文件/LF/0755，与本地源码一致。已上传并部署同一literature-reads的$LATEST，界面正常/与已部署代码一致，配置和权限未改。用户需用保留在本机的短期凭证再执行entries GET一次，真实诊断响应尚未取得；此前真实500事实保留，真库成功、其他GET、改单行与前端仍未验证。完整过程见部署说明及本地日志，不提交ZIP/_logs或秘密。
+- Day17第④板块安全诊断实际复核（2026-10-14）：用户截图中entries GET仍HTTP500，安全message明确SQL服务HTTP400/DATABASE_42501，retryable:false；新诊断生效，真库成功未通过。官方将该码定义为数据库权限不足，不能仅凭该码断言缺哪一层权限。
+- 实际角色权限核查更正：控制台系统只读角色带实例后缀cloudbase_read_only_user_postgres_gbu0fd7s；此前pg_roles查询无后缀名称NULL不能当作系统角色不存在。一次只读metadata SELECT（完整读回一致、11ms、三行）确认实际角色存在、public USAGE=true，而entries/reading_notes/favorites SELECT=false，RLS=false。拟最小修法仅GRANT SELECT三指定表给该既有角色，等待用户明确确认。未执行授权、改函数角色、建角色、改表或写业务数据；接口形状和已实现状态不变，未将本次诊断记为真实读取成功。详细证据见deploy-day17.md末节。
+
+- Day17第④板块权限修复小步（2026-10-14）：用户明确「同意执行」后，已在同环境SQL控制台执行唯一一条GRANT SELECT，精确目标public.entries/public.reading_notes/public.favorites及cloudbase_read_only_user_postgres_gbu0fd7s。完整语句读回一致；查询成功6ms，未返回业务行。
+- 一次授权后只读回核（完整读回一致、12ms、3行）显示三表SELECT=true，而INSERT/UPDATE/DELETE任一权限=false。仅证明后台只读角色取得读取能力，未验证真实带身份GET成功。云函数源码、HTTP固定role、表结构、业务数据、RLS、响应契约和接口实现状态未变；未向客户端角色授权。实际entries复核仍由用户本机凭证执行一次，失败/空列表则停止，不继续其他GET、改行或前端。完整证据见deploy-day17.md末节。
+
+- Day17第④板块首条真实读取成功（2026-10-14）：用户在浏览器执行GET /api/entries?limit=20，截图codex-clipboard-59f5118f-05d0-4ab5-8414-c9537cc5c346.png显示本次HTTP200、ok:true/error:null。data.items只有day17-test-entry-001，entryDate=2026-10-13，虚构原文与准备脚本一致，textVersion/revision=1，两个时间戳2026-10-13T01:00:00.000Z，adoptedAnalysis/origin=null，total=1，page.limit=20/nextCursor=null/hasMore=false。与第4.2节的十个Entry字段和列表结构一致；明确为真库内虚构数据，不写成用户真实经历。
+- 仅entries的本次真实身份/SQL/字段转换链路核对通过，已更新其实现验证状态；notes/favorites仍待真实验证。此前500、42501与读取授权历史保留。此图裁切到控制台，没有完整地址栏/响应头，最终提交两图仍不完整；分页变化/跨用户/改单行/前端仍未验证。没有执行新的请求、改代码、写数据库或Git；停止等用户「进入下一板块」。
+- Day17连续核验授权与页面（2026-10-14）：用户授权「直接帮我完成今天」及电脑代核验，新增独立只读day17-check.html以显示三个已登记公网GET的实际返回；不新增业务接口、用户名密码登录、前端本地数据导入或改表。凭证页内提交清空输入，仅闭包内存，退出清除；数据/JSON/分页/前后变化均据实际返回，不填虚构成功。静态代码检查通过；实际请求尚未执行。页面本地地址不等于公网API地址，目标公网来源固定。
+- 用户在Chrome/Edge准备的凭证不与Codex内置浏览器页面共享；只需在可接管核验页内准备已有短期凭证，不向聊天发送。当前entries先前真实读取仍已通过，notes/favorites、limit跨页、改行跟随、页面显示和最终截图仍未核验，不因用户同意连续工作而自动记为完成。
+
+- Day17核验页最新停点（2026-10-14）：用户已在Codex页准备单行access_token，但首个entries请求发生浏览器网络失败，另两GET未发送。此前entries HTTP200截图结论保留。浏览器工具随后明确按URL策略拒绝页面访问；已停止操作并撤回未验证的本机转发，页面保持直接读取公网GET及单行凭证格式检查。notes/favorites、分页、改行跟随、页面成功显示与最终截图仍未通过。详情见部署说明最新节。
+
+- Day17核验页实际响应更新（2026-10-14）：用户截图显示entries HTTP401/UNAUTHENTICATED/登录凭证无效或已过期，后续GET停止。该提示对应身份验证拒绝，尚未执行SQL；页面能取得HTTP响应，但真实读取未通过，须重新登录后再核验。此前entries HTTP200历史证据保留，其他未完成项不变。
+
+- Day17单行更新实际证据（2026-10-14）：在用户连续核验授权下，代理先核对原记录，再仅执行一次带owner/id/原日期/精确原文/版本1/NULL前置条件及恰好1行断言的事务。数据库回核day17-test-entry-001新正文为「【虚构·Day17接口验证】我在数据库控制台改了一条记录。」，text_version/revision=2，日期仍2026-10-13，updated_at控制台显示2026-10-14 16:39:45+08。另查两条感悟原文与book/walden收藏均保留。只有数据库更新已通过，仍待新GET实际响应确认接口跟随；用户重新登录200/UID一致的报告不替代GET成功。
+
+- Day17最新成功截图（2026-10-14，codex-clipboard-2743ba7d-f2a6-449b-8a32-ec664f663002.png）：entries HTTP200，指定新正文、原日期、textVersion/revision2、总数1均可见；结合版本1的原成功截图及已执行UPDATE，改一行后接口和页面跟随通过。notes HTTP200及note002正文/顺序2可见，note001只露出开头。三GET成功总提示经源码复核有真实请求与封套校验条件，不能替代收藏精确状态和明细；完整JSON/收藏/分页仍待补证。本地核验页地址栏不能当作公网API地址。
+
+- Day17最终补图核对（2026-10-14）：6719d6d6...数据图完整显示三个HTTP200、entries版本2/原日期、notes两次原文及total2/latestNoteId002、收藏book/walden；ace12912...完整收藏JSON确认顶层ok/data/error、ok=true/error=null、favoritedAt=2026-10-13T01:25:00.000Z、total1、limit20/nextCursor=null/hasMore=false，符合第4.14节。主任务实现和验证完成，提交推送待用户确认12文件清单。图中本地地址栏与页面内公网API地址明确区分；不声称主React已接库或核验页已公开部署。
