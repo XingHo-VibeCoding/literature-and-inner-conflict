@@ -311,6 +311,9 @@ export default function JournalPage({ onDraftChange }) {
                 onClick={() => requestAction({ type: 'select', id: item.id })}>
                 <time dateTime={item.entryDate}>{item.entryDate}</time>
                 <span className="history-excerpt">{Array.from(item.text.trim()).slice(0, 64).join('')}{countCharacters(item.text) > 64 ? '…' : ''}</span>
+                {item.origin?.type === 'reading-note' && <span className="reading-source">
+                  来自《{item.origin.bookTitle}》的阅读备注与感悟
+                </span>}
                 <span className="scope-note">{item.adoptedAnalysis?.source === 'demo' ? '有已采纳演示分析' : item.adoptedAnalysis ? '有已采纳分析' : '暂无已采纳分析'}</span>
               </button>
             </li>)}
@@ -371,6 +374,11 @@ export default function JournalPage({ onDraftChange }) {
         {!editing && entry && <section className={`saved-entry${entryFavorited ? ' is-favorited' : ''}`} aria-labelledby="saved-title">
           <h2 id="saved-title">记录详情</h2>
           <p className="saved-date">记录日期：<time dateTime={entry.entryDate}>{entry.entryDate}</time></p>
+          {entry.origin?.type === 'reading-note' && <p className="reading-source">
+            来自《{entry.origin.bookTitle}》的阅读备注与感悟；原文保存于<time dateTime={entry.origin.noteSavedAt}>
+              {new Date(entry.origin.noteSavedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+            </time>（北京时间）
+          </p>}
           <h3>你的原文</h3>
           <p className="entry-original">{entry.text}</p>
           <p className="scope-note">创建时间：{new Date(entry.createdAt).toLocaleString('zh-CN')}<br />更新时间：{new Date(entry.updatedAt).toLocaleString('zh-CN')}</p>

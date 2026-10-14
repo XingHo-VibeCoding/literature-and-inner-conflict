@@ -4,14 +4,14 @@ import {
   buildRecommendations, resolveRecommendationContext,
 } from '../services/catalog.js';
 import { readReadingData } from '../services/localStore.js';
-import { filterPersonalBooks } from '../services/readingModel.js';
+import { filterPersonalBooks, sortNoteHistory } from '../services/readingModel.js';
 import BookReadingPanel from './BookReadingPanel.jsx';
 import { createDemoExplanation, explanationKey, hasDemoExplanation } from '../services/explanationDemo.js';
 
 const personalViews = [
   { id: 'all', label: '全部书目' },
   { id: 'favorites', label: '我的收藏' },
-  { id: 'noted', label: '有备注' },
+  { id: 'noted', label: '有备注与感悟' },
 ];
 
 function BookTypes({ book }) {
@@ -27,13 +27,14 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   const { category, situationTagId, directionTagId, view, results, errors, notice } = browse;
   const isList = path === '/books';
   const book = isList ? null : getBook(path.slice('/books/'.length));
-  const [reading, setReading] = useState({ favorites: [], notes: [], status: 'loading' });
+  const [reading, setReading] = useState({ favorites: [], notes: [], noteHistory: [], status: 'loading' });
   const [favoriteBookIds, setFavoriteBookIds] = useState(() => new Set());
   const [reloadKey, setReloadKey] = useState(0);
   const [explanations, setExplanations] = useState({});
   const [explanationError, setExplanationError] = useState(null);
   const temporaryReading = {
     ...reading,
+    notes: reading.noteHistory,
     favorites: [...favoriteBookIds].map((bookId) => ({ bookId })),
   };
   const books = filterPersonalBooks(listBooks(category), view, temporaryReading);
@@ -66,11 +67,14 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
     return () => { active = false; };
   }, [path, reloadKey]);
 
-  function updateReading(name, value) {
-    setReading((previous) => ({
-      ...previous,
-      [name]: [...previous[name].filter((item) => item.bookId !== book.id), ...(value ? [value] : [])],
-    }));
+  function updateNotes(update) {
+    setReading((previous) => {
+      const current = previous.noteHistory.filter((item) => item.bookId === book.id);
+      const next = typeof update === 'function' ? update(current) : update;
+      return { ...previous, noteHistory: sortNoteHistory([
+        ...previous.noteHistory.filter((item) => item.bookId !== book.id), ...next,
+      ]) };
+    });
   }
 
   function updateTemporaryFavorite(bookId, favorite) {
@@ -83,10 +87,10 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   }
 
   const readingStatus = reading.status !== 'ready' && (
-    reading.status === 'loading' ? <p role="status">正在读取阅读备注…</p> : (
+    reading.status === 'loading' ? <p role="status">正在读取阅读备注与感悟…</p> : (
       <div className="error-panel" role="alert">
-        <p>阅读备注读取失败，当前无法确认个人备注状态。原有备注没有清空。</p>
-        <button type="button" onClick={() => setReloadKey((value) => value + 1)}>重新读取备注</button>
+        <p>阅读备注与感悟读取失败，原文仍保留在本地。请重新读取后再操作。</p>
+        <button type="button" onClick={() => setReloadKey((value) => value + 1)}>重新读取备注与感悟</button>
       </div>
     )
   );
@@ -144,7 +148,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
     setExplanationError(null);
     onBrowseChange((previous) => ({
       ...previous, ...next,
-      results: { ...next.results, selectionId: crypto.randomUUID() },
+      results: { ...next.results, selectionId: crypto.getRandomValues(new Uint32Array(4)).join('-') },
       view: 'recommendations', notice: '已按本次选择更新两类推荐，每组最多展示 3 本。',
     }));
   }
@@ -172,7 +176,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
         {reading.status === 'ready' && (
           <p className="reading-badges">
             {favoriteBookIds.has(item.id) && <span>已收藏</span>}
-            {reading.notes.some((value) => value.bookId === item.id) && <span>有备注</span>}
+            {reading.noteHistory.some((value) => value.bookId === item.id) && <span>有备注与感悟</span>}
           </p>
         )}
         <p>{item.intro}</p>
@@ -257,8 +261,8 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
             {readingStatus}
             {reading.status === 'ready' && <BookReadingPanel key={`${book.id}:${reloadKey}`}
               book={book} favorite={favoriteBookIds.has(book.id)}
-              note={reading.notes.find((item) => item.bookId === book.id) || null}
-              onFavoriteChange={updateTemporaryFavorite} onSaved={updateReading}
+              notes={reading.noteHistory.filter((item) => item.bookId === book.id)}
+              onFavoriteChange={updateTemporaryFavorite} onNotesChange={updateNotes}
               onReload={() => setReloadKey((value) => value + 1)}
               onDraftChange={onDraftChange} />}
           </article>

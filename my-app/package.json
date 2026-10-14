@@ -5,6 +5,7 @@
   "type": "module",
   "description": "文学与内心冲突的本地页面骨架",
   "scripts": {
+    "test": "node --test",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host localhost --port 4173 --strictPort"
@@ -18,6 +19,8 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "6.1.1",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^30.1.2",
     "vite": "8.3.0"
   }
 }

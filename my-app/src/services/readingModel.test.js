@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { countCharacters, validateNote } from '../../shared/validation.js';
-import { filterPersonalBooks, requireCurrentNote, reviseNote } from './readingModel.js';
+import {
+  filterPersonalBooks, requireCurrentNote, reviseNote, createHistoryNote,
+  sortNoteHistory, createNoteSummary,
+} from './readingModel.js';
 import { buildRecommendations, listBooks } from './catalog.js';
 
 test('备注边界按字符计数，空白无效，1000 有效，1001 无效', () => {
@@ -47,9 +50,28 @@ test('收藏与备注筛选独立，叠加类型后仍按书库顺序', () => {
 });
 
 test('个人视图的推荐仍来自符合类型的全库', () => {
-  const selection = { category: 'philosophy', situationTagId: 'rethink-life', directionTagId: 'simpler-life' };
+const selection = { category: 'philosophy', situationTagId: 'rethink-life', directionTagId: 'simpler-life' };
   const expected = buildRecommendations(selection);
   assert.deepEqual(buildRecommendations({ ...selection, view: 'favorites' }), expected);
   assert.deepEqual(buildRecommendations({ ...selection, view: 'noted' }), expected);
   assert.equal(expected.results.groups[0].items.length, 3);
+});
+
+test('同一毫秒保存的历史按保存顺序排序，原数组不被改写', () => {
+  const first = createHistoryNote('walden', '【虚构】第一条', 'z', '2026-10-06T10:00:00.000Z');
+  const second = { ...createHistoryNote('walden', '【虚构】第二条', 'a', first.savedAt), saveOrder: 2 };
+  const original = [first, second];
+  assert.deepEqual(sortNoteHistory(original).map((note) => note.id), ['a', 'z']);
+  assert.deepEqual(original.map((note) => note.id), ['z', 'a']);
+});
+
+test('总结原文不拼接来源，记录日期采用原备注保存时的上海日期', () => {
+  const note = createHistoryNote('walden', '  【虚构】感悟\n行动  ', 'note-1', '2026-10-06T18:30:00.000Z');
+  const entry = createNoteSummary(note, '瓦尔登湖', 'entry-1', '2026-10-08T00:00:00.000Z');
+  assert.equal(entry.text, note.body);
+  assert.equal(entry.entryDate, '2026-10-07');
+  assert.equal(entry.origin.noteSavedAt, note.savedAt);
+  assert.equal(entry.origin.bookTitle, '瓦尔登湖');
+  assert.equal(note.summaryLink, null);
+  assert.equal(entry.adoptedAnalysis, null);
 });

@@ -80,7 +80,7 @@ export default function App() {
 
   function navigate(nextPath, context = null) {
     // 历史条目只存随机标识；推荐上下文留在本页内存，刷新后不恢复。
-    const visitId = context ? crypto.randomUUID() : null;
+    const visitId = context ? crypto.getRandomValues(new Uint32Array(4)).join('-') : null;
     if (context) bookVisits.current.set(visitId, context);
     activeHistoryState.current = visitId ? { bookVisitId: visitId } : null;
     window.history.pushState(activeHistoryState.current, '', `#${nextPath}`);

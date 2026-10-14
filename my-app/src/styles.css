@@ -511,6 +511,16 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
 .books-shell .reading-badges span { background: #edf1e7; color: var(--home-green); font-size: 0.8125rem; }
 .books-shell .saved-note { padding: 20px; border: 1px solid #e0d9ca; border-radius: 8px; background: #faf7ef; }
 .books-shell .saved-note h4 { font-size: 1.25rem; line-height: 1.6; }
+.books-shell .saved-note { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 20px; }
+.books-shell .saved-note-copy { min-width: 0; }
+.books-shell .saved-note.is-in-summary { border-color: #b17d24; background: #fff8df; }
+.books-shell .note-summary-action { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.books-shell .note-summary-action .scope-note { margin: 0; }
+.books-shell .past-reading-notes { margin-top: 28px; }
+.books-shell .past-reading-notes > h4 { margin: 0 0 16px; font-size: 1.25rem; line-height: 1.6; }
+.books-shell .past-reading-notes .saved-note + .saved-note { margin-top: 16px; }
+.books-shell .saved-note h5 { margin: 0 0 8px; font-family: var(--home-display-font); font-size: 1.125rem; font-weight: 400; line-height: 1.6; }
+.journal-shell .reading-source { color: var(--home-green); font-size: 0.875rem; line-height: 1.8; }
 .books-shell .entry-original { font-size: 1rem; line-height: 1.95; }
 .books-shell .success-message { padding: 12px 16px; border-left: 3px solid var(--home-green); background: #edf1e7; border-radius: 0 6px 6px 0; color: #365b43; font-size: 0.9375rem; }
 .books-shell .error-panel { background: #fff8f3; border-radius: 8px; }
@@ -529,4 +539,6 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
   .books-shell .book-detail h2 { font-size: 1.625rem; }
   .books-shell .match-reason, .books-shell .demo-explanation, .books-shell .recommendation-conditions, .books-shell .storage-notice, .books-shell .saved-note { padding: 16px; }
   .books-shell dialog { padding: 22px; }
+  .books-shell .saved-note { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .books-shell .note-summary-action { justify-self: end; }
 }
