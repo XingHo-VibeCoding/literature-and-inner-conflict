@@ -3,8 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "commonjs",
-  "description": "文学与内心冲突的 Day 17 私人数据读取 HTTP 云函数",
+  "description": "文学与内心冲突的 Day 17 列表读取与 Day 18 日精进写入 HTTP 云函数",
   "main": "index.js",
-  "engines": { "node": ">=20.19.0" },
-  "scripts": { "start": "node index.js", "test": "node --test reads.test.js" }
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test reads.test.js writes.test.js"
+  }
 }

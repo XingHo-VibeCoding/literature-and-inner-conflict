@@ -1,6 +1,6 @@
 # 文学与内心冲突｜API 契约（Day 15 创建，Day 16 补充表结构）
 
-编制日期：2026-10-09；接口契约核对日期：2026-10-12；Day16表结构补充日期：2026-10-13；Day17验证更新日期：2026-10-14（Asia/Shanghai）。状态：**已由用户确认的第3周接口契约**。Day17三个列表GET已实现、部署并通过真实测试用户HTTP200核对；格式A、范围A、身份A，29项本地模拟检查通过。entries改库后新正文和版本2已同步到接口与核验页；两次感悟原文及收藏均保留，最终两张截图已核对。用户已确认仅提交12个Day17文件。其他16项业务接口仍为未来占位；历史证据保留文末。
+编制日期：2026-10-09；接口契约核对日期：2026-10-12；Day16表结构补充日期：2026-10-13；Day17验证更新日期：2026-10-14（Asia/Shanghai）。状态：**已由用户确认的第3周接口契约**。Day17三个列表GET已实现、部署并通过真实测试用户HTTP200核对；格式A、范围A、身份A，29项本地模拟检查通过。entries改库后新正文和版本2已同步到接口与核验页；两次感悟原文及收藏均保留，最终两张截图已核对。Day17的12文件已提交推送。Day18于2026-10-14完成POST /api/entries部署、真实201/409/400、数据库单行与GET读回核对，56项本地模拟检查通过；Day18的10文件提交范围已获用户确认。其余15项业务接口仍为未来占位；历史证据保留文末。
 
 ## 1. 范围、事实与 AI 推导
 
@@ -8,7 +8,7 @@
 
 **Day 15 历史事实（2026-10-12核对）：** health源文件已生成并本地验证，CloudBase云函数literature-health及/api/health路由已部署，实际公网GET返回200和指定JSON，用户浏览器也已确认JSON。当时其余19个业务接口全部是占位，没有部署、调用或改动现有前端。
 
-**Day 17 用户确认与当前范围（2026-10-13）：** 用户确认「格式 A，范围 A，身份 A」：业务响应统一为恰好三个键的 `{ok,data,error}`；实现 `GET /api/entries`、`GET /api/books/:bookId/notes`、`GET /api/favorites` 三个列表读取接口；使用 CloudBase 真实用户身份核验。此次只读取现有 PostgreSQL 表，不改表结构、不写业务写入接口、不新增登录页面或认证接口。代码状态见第4.2、4.14、4.17节，部署和真库验证仍须独立核对。
+**Day 17 用户确认与当时范围（2026-10-13）：** 用户确认「格式 A，范围 A，身份 A」：业务响应统一为恰好三个键的 `{ok,data,error}`；实现 `GET /api/entries`、`GET /api/books/:bookId/notes`、`GET /api/favorites` 三个列表读取接口；使用 CloudBase 真实用户身份核验。此次只读取现有 PostgreSQL 表，不改表结构、不写业务写入接口、不新增登录页面或认证接口。代码状态见第4.2、4.14、4.17节，部署和真库验证仍须独立核对。
 
 **现有页面：** 原文与感悟存 IndexedDB；分析和讲解是明确标注的固定虚构演示；书本和日总结收藏是会话状态，刷新重置；当前列表没有分页。首页 homeMock 是固定虚构样例，不读个人记录。本契约不新增首页真实聚合接口、登录页面、管理后台、分析历史或修改往期感悟。
 
@@ -73,6 +73,7 @@ fields仅在字段错误时提供；message不泄露内部堆栈、供应商凭�
 - 400 INVALID_INPUT：字段、日期、ID、标签或游标无效。
 - 401 UNAUTHENTICATED：私人接口没有可验证身份，或提供了无效身份凭证。
 - 404 ENTRY_NOT_FOUND / BOOK_NOT_FOUND / NOTE_NOT_FOUND：目标不存在或不属于当前用户；不泄露他人资源是否存在。
+- 409 DUPLICATE_ENTRY：同一已验证用户、同一日期、完全相同原文重复提交。
 - 409 VERSION_CONFLICT：预期 revision 或原文 textVersion 失效。
 - 409 CATALOG_VERSION_MISMATCH：请求书库版本与服务端发布版本不同。
 - 409 NOTE_NOT_LATEST：删除的不是该作品最新感悟。
@@ -305,7 +306,7 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 
 ## 4. 接口逐项定义
 
-下列JSON是实际传输形状样例，没有省略号；业务响应已统一为第2节的三键形状。health维持已验证的独立响应；Day 17 三项列表GET的代码已实现，29项本地虚构数据检查已通过（含当前安全诊断），三条路由已保存，无Bearer公网HTTP均401；entries带身份真库已通过，其余两GET和最终含地址栏截图待验证；其余16项业务接口仍为**未来占位**。普通业务响应样例另含 `X-Request-Id: demo-request-001` 响应头；两项未来AI响应头使用各自请求body中的requestId。每项列出自己的特定错误；发生基础请求格式错误时也遵守第2节413/415约定。
+下列JSON是实际传输形状样例，没有省略号；业务响应已统一为第2节的三键形状。health维持已验证的独立响应；Day17三项列表GET已部署并通过真实HTTP200与截图核对。Day18的POST /api/entries已部署，正常201、重复409、缺字段400、数据库单行与GET读回均有直接证据；读取和写入共56项本地模拟检查通过。其余15项业务接口仍为**未来占位**。普通业务响应样例另含 `X-Request-Id: demo-request-001` 响应头；两项未来AI响应头使用各自请求body中的requestId。每项列出自己的特定错误；发生基础请求格式错误时也遵守第2节413/415约定。
 
 ### 4.1 GET /api/health
 
@@ -359,12 +360,12 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 
 ### 4.4 POST /api/entries
 
-- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
+- 实现状态：**Day 18 已实现、部署并通过主任务验证：正常POST 201且完整三键响应符合契约，重复409、缺原文400及中文字段提示已截图核对；数据库匹配行数1、版本均1，POST/SELECT/GET的ID一致，GET entries与favorites均200且原收藏保留；本地56项模拟测试通过。10文件提交范围已获用户确认**。2026-10-14 用户确认本日仅实现此 POST，新增记录由 GET /api/entries 读回，最后调用 GET /api/favorites 核对原收藏，不自动创建收藏。实现与验证说明见 [deploy-day18.md](./deploy-day18.md)。
 
 - 用途：新建日精进，保留用户原文和日期。
 - 页面依据：`src/services/localStore.js createEntry；shared/validation.js validateEntry`。
 - 身份／状态：私人。
-- 参数：body：entryDate、text 必需。entryDate 为有效 YYYY-MM-DD 日期；text 校验为1–5000个有效字符，保存原始输入。ID、版本、时间、ownerId、origin和adoptedAnalysis不由客户端指定。
+- 参数：无 query。body：entryDate、text 必需。entryDate 为有效 YYYY-MM-DD 日期；text 校验为1–5000个有效字符，保存原始输入。ID、版本、时间、ownerId、origin和adoptedAnalysis不由客户端指定。
 
 请求JSON示例：
 
@@ -378,7 +379,15 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 {"ok":true,"data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我记下了一个问题。\n","textVersion":1,"revision":1,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:00:00.000Z","adoptedAnalysis":null,"origin":null},"error":null}
 ```
 
-错误返回：400 INVALID_INPUT（fields可含entryDate/text）；401 UNAUTHENTICATED；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。
+错误返回：400 INVALID_INPUT（fields可含entryDate/text或时区）；401 UNAUTHENTICATED；409 DUPLICATE_ENTRY；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。
+
+**Day 18 用户确认的防重规则（2026-10-14）：** 同一已验证用户、同一 entryDate、完全相同原文的记录重复提交返回 HTTP 409，code=DUPLICATE_ENTRY，中文 message「这一天已经保存过完全相同的原文，请勿重复提交。」，data=null、retryable=false。同日不同原文允许保存；不同用户互不误拒。原文不去空白、不做 Unicode 规范化，相同日期仅在用于校验时检查，不改用户输入。
+
+**当前新增流程的并发保护：** 服务端依据用户身份、日期、完整原文的 JSON 元组生成 SHA256 不透明 ID；相同输入命中相同数据库主键，固定单条 INSERT ... ON CONFLICT(id) DO NOTHING 仅返回实际新增行，未新增则409。旧随机 ID 记录由同一语句的 NOT EXISTS 按原文精确查重；不新增数据库对象、重置数据或修改读取权限。此方案覆盖本日 POST 新增流程，直接 SQL 写入不受本接口保护；未来实现 PATCH 前须调整可编辑记录的防重模型，避免旧 ID 与修改后原文不一致导致过度拒绝。SHA256 使用工程上的碰撞抗性，不声称数学绝无碰撞。
+
+**校验与写入边界：** JSON 请求体最多64 KiB；拒绝非法 UTF-8/JSON、非对象、未登记字段、原文空字符及不成对代理项，不替换无法保存的字符。必填日期必须为0001到9999年的有效 YYYY-MM-DD，不能晚于 X-Client-Time-Zone 所指今天；省略时区默认 Asia/Shanghai，无效时区返回400。正文去首尾空白后按 Unicode 码点校验1–5000，存储仍保留原始空格、换行。ownerId由真实 Bearer 验证确定；版本、时间和可空对象由既有数据库默认值产生，原文由参数化 SQL 保存。
+
+**平台 SQL 角色：** 固定 INSERT 通过 CloudBase HTTPS SQL 的 cloudbase_postgres 角色执行；它是平台管理角色，数据库权限范围较广，不能称为最小 INSERT 角色。仅服务端固定 SQL 白名单允许此写语句，不提供客户端 SQL 或角色选择；原有三个 GET 保持 cloudbase_read_only_user。此实现不新增密钥、角色或 GRANT。官方角色限制见 [CloudBase 执行 SQL](https://docs.cloudbase.net/en/http-api/pgdb/exec-pgsql)，主键冲突与 RETURNING 语义见 [PostgreSQL 17 INSERT](https://www.postgresql.org/docs/17/sql-insert.html)。
 
 ### 4.5 PATCH /api/entries/:entryId
 
@@ -744,7 +753,7 @@ outcome固定枚举与响应关系：
 ## 7. 当前验证边界与交接
 
 - Day 15 历史事实：当时仅实现health，其余19项业务接口未实现、未调用、未验证。
-- Day17当前代码状态：三个列表GET已实现、部署并通过真实测试用户HTTP200核对；29项本地模拟检查通过。entries改单行跟随及核验页新正文/版本2、两次完整感悟原文与最新ID、book/walden收藏完整JSON均已核对，最终两图已收到。主React仍用本地数据，独立day17-check.html显示公网实际响应；真实limit1跨页与跨用户隔离未实测，其余16项业务接口未实现。Day17提交范围已获用户确认。详见[Day17部署说明](./deploy-day17.md)。
+- Day17完成时状态（历史）：三个列表GET已实现、部署并通过真实测试用户HTTP200核对；29项本地模拟检查通过。entries改单行跟随及核验页新正文/版本2、两次完整感悟原文与最新ID、book/walden收藏完整JSON均已核对，最终两图已收到。主React仍用本地数据，独立day17-check.html显示公网实际响应；真实limit1跨页与跨用户隔离未实测，其余16项业务接口未实现。Day17提交范围已获用户确认。详见[Day17部署说明](./deploy-day17.md)。
 - Day 16 已在用户明确授权清空三表现有数据后，由AI在原CloudBase环境控制台核对PostgreSQL 17.11；种子输入副本两次执行均成功，两次查询行数均为5／5／5，三表实际select和五行关联查询均已核对；主键与两个指定外键已查到。详见第3.7节，不将虚构种子当成用户经历或真实AI结果。
 - 云端输入副本只去掉以--开头的说明行，保留全部可执行SQL及COMMENT ON；两次粘贴读回核对一致。本地脚本没有因此改动，独立schema.sql原版尚未单独重跑；已核对的重复执行证据来自种子输入副本。
 - Day 16 三张表数据页截图已由用户提供并核对通过：favorites、entries、reading_notes均有完整表名、五行虚构数据和共5条计数。尚未提交；截图和种子查询不表示真实业务接口或保护流程已实现。

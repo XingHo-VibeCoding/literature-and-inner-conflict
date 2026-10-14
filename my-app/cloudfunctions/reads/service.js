@@ -181,4 +181,4 @@ function createReader({ query, bookIds, cursorSecret }) {
   };
 }
 
-module.exports = { ApiError, createReader, ENTRIES_SQL, NOTES_SQL, FAVORITES_SQL };
+module.exports = { ApiError, createReader, entry, ENTRIES_SQL, NOTES_SQL, FAVORITES_SQL };
