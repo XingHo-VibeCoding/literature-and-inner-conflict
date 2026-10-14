@@ -1,4 +1,7 @@
 const { createHmac, timingSafeEqual } = require('node:crypto');
+const { ENTRIES_SQL, createEntriesRepository } = require('./entriesRepository');
+const { NOTES_SQL, createReadingNotesRepository } = require('./readingNotesRepository');
+const { FAVORITES_SQL, createFavoritesRepository } = require('./favoritesRepository');
 
 class ApiError extends Error {
   constructor(status, code, message, retryable = false) {
@@ -9,57 +12,6 @@ class ApiError extends Error {
   }
 }
 const invalid = (message) => new ApiError(400, 'INVALID_INPUT', message);
-
-// SQL 文本与排序固定；用户 ID、筛选、游标位置和条数只通过占位符传入。
-// 一条 SELECT 同时读取列表和总数，使用同一数据库快照。
-const ENTRIES_SQL = `
-WITH scoped AS (
-  SELECT id, entry_date, to_char(entry_date, 'YYYY-MM-DD') AS entry_date_text,
-    text, text_version, revision, created_at, updated_at, adopted_analysis, origin
-  FROM public.entries WHERE owner_id = $1
-), page_rows AS (
-  SELECT * FROM scoped
-  WHERE $2::date IS NULL OR entry_date < $2::date
-    OR (entry_date = $2::date AND created_at < $3::timestamptz)
-    OR (entry_date = $2::date AND created_at = $3::timestamptz AND id > $4::text)
-  ORDER BY entry_date DESC, created_at DESC, id ASC LIMIT $5::integer
-)
-SELECT (SELECT count(*) FROM scoped)::text AS total,
-  COALESCE((SELECT jsonb_agg(to_jsonb(page_rows)
-    ORDER BY entry_date DESC, created_at DESC, id ASC) FROM page_rows), '[]'::jsonb) AS rows`;
-
-const NOTES_SQL = `
-WITH scoped AS (
-  SELECT id, book_id, body, revision, created_at, updated_at, saved_at, save_order,
-    summary_entry_id, summary_active, summary_linked_at,
-    summary_entry_revision_at_link, summary_preserve_on_cancel
-  FROM public.reading_notes WHERE owner_id = $1 AND book_id = $2
-), page_rows AS (
-  SELECT * FROM scoped
-  WHERE $3::timestamptz IS NULL OR saved_at < $3::timestamptz
-    OR (saved_at = $3::timestamptz AND save_order < $4::integer)
-    OR (saved_at = $3::timestamptz AND save_order = $4::integer AND id < $5::text)
-  ORDER BY saved_at DESC, save_order DESC, id DESC LIMIT $6::integer
-)
-SELECT (SELECT count(*) FROM scoped)::text AS total,
-  (SELECT id FROM scoped ORDER BY saved_at DESC, save_order DESC, id DESC LIMIT 1) AS latest_note_id,
-  COALESCE((SELECT jsonb_agg(to_jsonb(page_rows)
-    ORDER BY saved_at DESC, save_order DESC, id DESC) FROM page_rows), '[]'::jsonb) AS rows`;
-
-const FAVORITES_SQL = `
-WITH scoped AS (
-  SELECT target_type, target_id, favorited_at FROM public.favorites
-  WHERE owner_id = $1 AND ($2::text IS NULL OR target_type = $2::text)
-), page_rows AS (
-  SELECT * FROM scoped
-  WHERE $3::timestamptz IS NULL OR favorited_at < $3::timestamptz
-    OR (favorited_at = $3::timestamptz AND target_type > $4::text)
-    OR (favorited_at = $3::timestamptz AND target_type = $4::text AND target_id > $5::text)
-  ORDER BY favorited_at DESC, target_type ASC, target_id ASC LIMIT $6::integer
-)
-SELECT (SELECT count(*) FROM scoped)::text AS total,
-  COALESCE((SELECT jsonb_agg(to_jsonb(page_rows)
-    ORDER BY favorited_at DESC, target_type ASC, target_id ASC) FROM page_rows), '[]'::jsonb) AS rows`;
 
 function iso(value) {
   const date = new Date(value);
@@ -97,6 +49,9 @@ function createReader({ query, bookIds, cursorSecret }) {
   if (typeof cursorSecret !== 'string' || Buffer.byteLength(cursorSecret) < 32) {
     throw new Error('请配置至少32字节的随机 CURSOR_SECRET。');
   }
+  const entriesRepository = createEntriesRepository({ query });
+  const readingNotesRepository = createReadingNotesRepository({ query });
+  const favoritesRepository = createFavoritesRepository({ query });
   const sign = (value) => createHmac('sha256', cursorSecret).update(value).digest('base64url');
   // 游标只带排序位置及作用域摘要，不输出 owner_id；签名防止篡改或串用户。
   function encode(scope, keys) {
@@ -148,24 +103,21 @@ function createReader({ query, bookIds, cursorSecret }) {
     if (params.has('cursor') && !params.get('cursor')) throw invalid('分页游标不能为空。');
     const scope = JSON.stringify([kind, ownerId, bookId ?? null, targetType, 'day17-sort-v1']);
     const keys = decode(params.get('cursor'), scope, kind);
-    let sql, values, map, position;
+    let load, map, position;
     if (kind === 'entries') {
-      sql = ENTRIES_SQL;
-      values = [ownerId, ...(keys || [null, null, null]), limit + 1];
+      load = () => entriesRepository.list({ ownerId, keys, limit: limit + 1 });
       map = entry;
       position = (row) => [row.entry_date_text, iso(row.created_at), row.id];
     } else if (kind === 'notes') {
-      sql = NOTES_SQL;
-      values = [ownerId, bookId, ...(keys || [null, null, null]), limit + 1];
+      load = () => readingNotesRepository.list({ ownerId, bookId, keys, limit: limit + 1 });
       map = note;
       position = (row) => [iso(row.saved_at), row.save_order, row.id];
     } else {
-      sql = FAVORITES_SQL;
-      values = [ownerId, targetType, ...(keys || [null, null, null]), limit + 1];
+      load = () => favoritesRepository.list({ ownerId, targetType, keys, limit: limit + 1 });
       map = favorite;
       position = (row) => [iso(row.favorited_at), row.target_type, row.target_id];
     }
-    const result = await query(sql, values);
+    const result = await load();
     const summary = result.rows[0];
     if (!summary || !Array.isArray(summary.rows)) throw new Error('数据库列表结果异常。');
     const total = Number(summary.total);

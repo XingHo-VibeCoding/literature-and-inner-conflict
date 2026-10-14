@@ -1,5 +1,7 @@
-const { ApiError, ENTRIES_SQL, NOTES_SQL, FAVORITES_SQL } = require('./service');
-const { INSERT_ENTRY_SQL } = require('./writer');
+const { ApiError } = require('./service');
+const { ENTRIES_SQL, INSERT_ENTRY_SQL } = require('./entriesRepository');
+const { NOTES_SQL } = require('./readingNotesRepository');
+const { FAVORITES_SQL } = require('./favoritesRepository');
 
 // 只公开固定错误代码；供应商的原始消息和细节可能包含 SQL 或用户数据。
 const diagnosticCodes = new Set([

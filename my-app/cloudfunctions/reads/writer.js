@@ -1,19 +1,6 @@
 const { createHash } = require('node:crypto');
 const { ApiError, entry } = require('./service');
-
-// 固定单条 SQL：旧记录按原文精确查重；新请求以同一主键抵挡并发重发。
-// 所有用户输入只进入参数，不拼接 SQL；日期、原文与用户身份一起决定服务端 ID。
-const INSERT_ENTRY_SQL = `
-INSERT INTO public.entries (id, owner_id, entry_date, text)
-SELECT $1::text, $2::text, $3::date, $4::text
-WHERE NOT EXISTS (
-  SELECT 1 FROM public.entries
-  WHERE owner_id = $2::text AND entry_date = $3::date
-    AND text COLLATE "C" = $4::text COLLATE "C"
-)
-ON CONFLICT (id) DO NOTHING
-RETURNING id, to_char(entry_date, 'YYYY-MM-DD') AS entry_date_text,
-  text, text_version, revision, created_at, updated_at, adopted_analysis, origin`;
+const { INSERT_ENTRY_SQL, createEntriesRepository } = require('./entriesRepository');
 
 function invalid(message, fields) {
   const error = new ApiError(400, 'INVALID_INPUT', message);
@@ -56,6 +43,7 @@ function validDate(value) {
 }
 
 function createWriter({ query, now = () => new Date() }) {
+  const entriesRepository = createEntriesRepository({ query });
   return async function write({ ownerId, body, timeZone }) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw invalid('请求体必须是 JSON 对象。');
@@ -99,7 +87,7 @@ function createWriter({ query, now = () => new Date() }) {
       .update(JSON.stringify([ownerId, body.entryDate, body.text]), 'utf8').digest('hex')}`;
     let result;
     try {
-      result = await query(INSERT_ENTRY_SQL, [id, ownerId, body.entryDate, body.text]);
+      result = await entriesRepository.insert({ id, ownerId, entryDate: body.entryDate, text: body.text });
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.code === 'WRITE_FAILED') throw error;
