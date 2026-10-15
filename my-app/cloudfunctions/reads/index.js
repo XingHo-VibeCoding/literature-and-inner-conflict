@@ -2,6 +2,9 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { createCors, validateAllowedOrigin } = require(
+  fs.existsSync(path.join(__dirname, 'cors.cjs')) ? './cors.cjs' : '../cors.cjs',
+);
 const { createCloudBaseAuth } = require('./auth');
 const { createCloudBaseQuery } = require('./db');
 const { ApiError, createReader } = require('./service');
@@ -42,7 +45,8 @@ function readJson(request) {
   });
 }
 
-function createServer({ authenticate, read, write, logError = () => {}, logEvent = () => {} }) {
+function createServer({ authenticate, read, write, allowedOrigin, logError = () => {}, logEvent = () => {} }) {
+  const cors = createCors({ allowedOrigin, methods: ['GET', 'POST'] });
   return http.createServer(async (request, response) => {
     const requestId = randomUUID();
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -51,6 +55,13 @@ function createServer({ authenticate, read, write, logError = () => {}, logEvent
     response.setHeader('X-Content-Type-Options', 'nosniff');
     let writing = false;
     try {
+      const corsResult = cors(request, response);
+      if (corsResult.kind === 'reject') throw new ApiError(403, corsResult.code, corsResult.message);
+      if (corsResult.kind === 'preflight') {
+        response.writeHead(204);
+        response.end();
+        return;
+      }
       let url;
       try { url = new URL(request.url, 'http://localhost'); } catch {
         throw new ApiError(400, 'INVALID_INPUT', '请求地址无效。');
@@ -113,6 +124,7 @@ function createServer({ authenticate, read, write, logError = () => {}, logEvent
 
 function start() {
   const env = process.env;
+  const allowedOrigin = validateAllowedOrigin(env.ALLOWED_ORIGIN);
   const authenticate = createCloudBaseAuth(env.CLOUDBASE_ENV_ID);
   const query = createCloudBaseQuery(env.CLOUDBASE_ENV_ID, env.CLOUDBASE_APIKEY);
   const packedCatalog = path.join(__dirname, 'catalog.json');
@@ -123,7 +135,7 @@ function start() {
     bookIds: new Set(catalog.books.map((book) => book.id)), cursorSecret: env.CURSOR_SECRET,
   });
   const write = createWriter({ query });
-  const server = createServer({ authenticate, read, write,
+  const server = createServer({ authenticate, read, write, allowedOrigin,
     logError: (event) => console.error('业务请求失败。', event),
     logEvent: (event) => console.log('日精进写入成功。', event),
   });
