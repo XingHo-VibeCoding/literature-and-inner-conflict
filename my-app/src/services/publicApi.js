@@ -90,6 +90,29 @@ function validateInput(input) {
   return { entryDate: input.entryDate, text: input.text };
 }
 
+function validateEntryTarget(entryId, expectedRevision) {
+  if (typeof entryId !== 'string' || !entryId || entryId.length > 256 || /[\u0000-\u001f\u007f]/.test(entryId)) {
+    throw apiError('记录 ID 无效，请重新读取记录。', { code: 'INVALID_INPUT' });
+  }
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
+    throw apiError('记录版本无效，请重新读取后再操作。', { code: 'INVALID_INPUT' });
+  }
+}
+
+function validatePatch(input) {
+  if (!isObject(input) || Object.keys(input).some(key => !['entryDate', 'text', 'expectedRevision'].includes(key))
+    || (!Object.hasOwn(input, 'entryDate') && !Object.hasOwn(input, 'text'))) {
+    throw apiError('修改仅支持记录日期、原文与预期版本，至少修改一个字段。', { code: 'INVALID_INPUT' });
+  }
+  const candidate = validateInput({ entryDate: input.entryDate ?? '2000-01-01', text: input.text ?? '占位校验' });
+  if ((Object.hasOwn(input, 'entryDate') && input.entryDate == null) || (Object.hasOwn(input, 'text') && input.text == null)) {
+    throw apiError('日期与原文不能设为空值。', { code: 'INVALID_INPUT' });
+  }
+  return { expectedRevision: input.expectedRevision,
+    ...(Object.hasOwn(input, 'entryDate') ? { entryDate: candidate.entryDate } : {}),
+    ...(Object.hasOwn(input, 'text') ? { text: candidate.text } : {}) };
+}
+
 // 此服务不读写浏览器存储，不打印请求头或保存用户凭证。
 export function createPublicApiClient({ apiOrigin, requestOrigin = apiOrigin, fetchImpl = globalThis.fetch }) {
   const configuredOrigin = parseOrigin(apiOrigin, '公网接口地址');
@@ -192,6 +215,28 @@ export function createPublicApiClient({ apiOrigin, requestOrigin = apiOrigin, fe
         if (cursor !== undefined) query.set('cursor', cursor);
         return request('/api/entries?' + query, {
           token, signal, expectedStatus: 200, validate: data => isEntryList(data, limit),
+        });
+      } catch (error) { return Promise.reject(error); }
+    },
+    updateEntry({ token, entryId, input, signal } = {}) {
+      try {
+        requireToken(token);
+        const body = validatePatch(input);
+        validateEntryTarget(entryId, body.expectedRevision);
+        return request('/api/entries/' + encodeURIComponent(entryId), {
+          method: 'PATCH', token, body, signal, expectedStatus: 200,
+          validate: data => isEntry(data) && data.id === entryId,
+        });
+      } catch (error) { return Promise.reject(error); }
+    },
+    deleteEntry({ token, entryId, expectedRevision, signal } = {}) {
+      try {
+        requireToken(token);
+        validateEntryTarget(entryId, expectedRevision);
+        const query = new URLSearchParams({ expectedRevision: String(expectedRevision) });
+        return request('/api/entries/' + encodeURIComponent(entryId) + '?' + query, {
+          method: 'DELETE', token, signal, expectedStatus: 200,
+          validate: data => hasExactKeys(data, ['deleted', 'entryId']) && data.deleted === true && data.entryId === entryId,
         });
       } catch (error) { return Promise.reject(error); }
     },

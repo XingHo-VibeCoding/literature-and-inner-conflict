@@ -70,6 +70,13 @@ export default function HomePage() {
   const [testText, setTestText] = useState(makeTestText);
   const [writeState, setWriteState] = useState({ status: 'idle', message: '', httpStatus: null, requestId: null });
   const [writeReceipt, setWriteReceipt] = useState(null);
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [editDate, setEditDate] = useState('');
+  const [editText, setEditText] = useState('');
+  const [mutationState, setMutationState] = useState({ status: 'idle', message: '' });
+  const [mutationReceipt, setMutationReceipt] = useState(null);
+  const [patchEvidence, setPatchEvidence] = useState(null);
+  const [deleteEvidence, setDeleteEvidence] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -147,6 +154,16 @@ export default function HomePage() {
     setHealthRevision((current) => current + 1);
   }
 
+  function resetMutations() {
+    setSelectedEntry(null);
+    setEditDate('');
+    setEditText('');
+    setMutationState({ status: 'idle', message: '' });
+    setMutationReceipt(null);
+    setPatchEvidence(null);
+    setDeleteEvidence(null);
+  }
+
   function prepareCredential(event) {
     event.preventDefault();
     if (writingRef.current || loginBusyRef.current) return;
@@ -157,6 +174,7 @@ export default function HomePage() {
       return;
     }
     sessionVersion.current += 1;
+    resetMutations();
     copyBusyRef.current = false;
     setCopyState({ status: 'idle', message: '' });
     writeController.current?.abort();
@@ -175,6 +193,7 @@ export default function HomePage() {
 
   function clearCredential() {
     sessionVersion.current += 1;
+    resetMutations();
     copyBusyRef.current = false;
     setCopyState({ status: 'idle', message: '' });
     readController.current?.abort();
@@ -205,6 +224,7 @@ export default function HomePage() {
     copyBusyRef.current = false;
     setCopyState({ status: 'idle', message: '' });
     sessionVersion.current += 1;
+    resetMutations();
     const currentSession = sessionVersion.current;
     const controller = new AbortController();
     loginController.current?.abort();
@@ -324,6 +344,125 @@ export default function HomePage() {
     }
   }
 
+  function selectEntry(entry) {
+    if (writingRef.current || loginBusyRef.current) return;
+    setSelectedEntry(entry);
+    setEditDate(entry.entryDate);
+    setEditText(entry.text);
+    setMutationReceipt(null);
+    setMutationState({ status: 'idle', message: '' });
+  }
+
+  async function readBackMutation(receipt, controller, currentSession) {
+    const pages = [];
+    const items = [];
+    const seenIds = new Set();
+    const seenCursors = new Set();
+    let cursor;
+    let total;
+    let result;
+    do {
+      result = await apiSetup.client.getEntries({ token: tokenRef.current, signal: controller.signal, limit: 20, cursor });
+      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      if (total !== undefined && total !== result.data.total) throw new Error('读回期间记录总数发生变化，请仅重新读取核对。');
+      total = result.data.total;
+      pages.push(result.data);
+      for (const entry of result.data.items) {
+        if (seenIds.has(entry.id)) throw new Error('分页返回了重复 ID，本次尚未核对。');
+        seenIds.add(entry.id);
+        items.push(entry);
+      }
+      cursor = result.data.page.hasMore ? result.data.page.nextCursor : undefined;
+      if (cursor && seenCursors.has(cursor)) throw new Error('分页游标重复，本次尚未核对。');
+      if (cursor) seenCursors.add(cursor);
+    } while (cursor);
+    if (items.length !== total) throw new Error('全部分页条数与 total 不一致，本次尚未核对。');
+    setView({ status: items.length ? 'content' : 'empty', items, total, page: result.data.page,
+      error: '', code: '', ...requestEvidence(result), fetchedAt: new Date().toISOString(), loadingMore: false });
+    const saved = items.find(entry => entry.id === receipt.before.id);
+    const evidence = { before: receipt.before, after: saved, pages, total, readCount: items.length,
+      writeStatus: receipt.httpStatus, ...requestEvidence(result) };
+    if (receipt.operation === 'PATCH') {
+      if (!saved || saved.entryDate !== receipt.entry.entryDate || saved.text !== receipt.entry.text
+        || saved.entryDate !== receipt.input.entryDate || saved.text !== receipt.input.text
+        || saved.revision !== receipt.entry.revision || saved.textVersion !== receipt.entry.textVersion
+        || saved.revision !== receipt.before.revision + 1
+        || saved.textVersion !== receipt.before.textVersion + (receipt.before.text === receipt.input.text ? 0 : 1)) {
+        throw new Error('GET 未读到与本次 PATCH 相同的 ID、日期、原文及版本，本次尚未核对。');
+      }
+      setPatchEvidence(evidence);
+      setSelectedEntry(saved);
+      setMutationState({ status: 'success', message: '修改已核对：PATCH 200，随后 GET 200 读回相同 ID、日期、原文与版本。', ...requestEvidence(result) });
+    } else {
+      if (saved) throw new Error('GET 全部分页仍返回目标 ID，删除尚未核对。');
+      setDeleteEvidence(evidence);
+      setSelectedEntry(null);
+      setEditDate('');
+      setEditText('');
+      setMutationState({ status: 'success', message: '删除已核对：DELETE 200，随后 GET 200 全部分页不再返回目标 ID。', ...requestEvidence(result) });
+    }
+    setMutationReceipt(null);
+  }
+
+  async function mutateEntry(operation, event) {
+    event?.preventDefault();
+    if (writingRef.current || loginBusyRef.current || !selectedEntry || !apiSetup.client || !tokenRef.current || mutationReceipt) return;
+    if (operation === 'DELETE') {
+      const preview = Array.from(selectedEntry.text).slice(0, 160).join('');
+      if (!window.confirm(`确认删除这条云端记录？\n日期：${selectedEntry.entryDate}\n原文预览：${preview}\n记录 ID：${selectedEntry.id}\n这是永久删除，记录及其关联收藏将被清理；阅读感悟原文保留。`)) {
+        setMutationState({ status: 'cancelled', message: '已取消删除，没有发送 DELETE 请求。' });
+        return;
+      }
+    }
+    writingRef.current = true;
+    readController.current?.abort();
+    const controller = new AbortController();
+    writeController.current = controller;
+    const currentSession = sessionVersion.current;
+    const before = selectedEntry;
+    const input = { entryDate: editDate, text: editText, expectedRevision: before.revision };
+    let receipt;
+    if (operation === 'PATCH') setPatchEvidence(null);
+    else setDeleteEvidence(null);
+    setMutationState({ status: 'writing', message: operation === 'PATCH' ? '正在修改云端记录…' : '正在删除云端记录…' });
+    try {
+      const result = operation === 'PATCH'
+        ? await apiSetup.client.updateEntry({ token: tokenRef.current, entryId: before.id, input, signal: controller.signal })
+        : await apiSetup.client.deleteEntry({ token: tokenRef.current, entryId: before.id, expectedRevision: before.revision, signal: controller.signal });
+      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      receipt = { operation, before, input, entry: result.data, ...requestEvidence(result) };
+      setMutationReceipt(receipt);
+      setMutationState({ status: 'verifying', message: `${operation} 已返回 200，正在逐页 GET 核对实际结果…`, ...requestEvidence(result) });
+      await readBackMutation(receipt, controller, currentSession);
+    } catch (error) {
+      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      const fields = error.fields ? Object.values(error.fields).join('；') : '';
+      setMutationState({ status: receipt ? 'readback-error' : 'error',
+        message: receipt ? `${operation} 已返回 200，但读回尚未核对：${error.message} 请只读核对，勿重复写入。`
+          : error.httpStatus === 409 ? `版本或数据冲突（409）：${error.message} 草稿已保留。请先刷新云端记录核对，再重新选择记录；不会自动重试。`
+            : `${error.message}${fields ? ' ' + fields : ''} 草稿已保留；结果不明确时先刷新云端记录核对，避免重复操作。`, ...requestEvidence(error) });
+    } finally {
+      if (currentSession === sessionVersion.current) writingRef.current = false;
+    }
+  }
+
+  async function verifyMutationAgain() {
+    if (writingRef.current || loginBusyRef.current || !mutationReceipt || !apiSetup.client || !tokenRef.current) return;
+    writingRef.current = true;
+    readController.current?.abort();
+    const controller = new AbortController();
+    writeController.current = controller;
+    const currentSession = sessionVersion.current;
+    setMutationState({ status: 'verifying', message: '正在逐页 GET 只读核对，不重新发送 PATCH 或 DELETE。', ...requestEvidence(mutationReceipt) });
+    try {
+      await readBackMutation(mutationReceipt, controller, currentSession);
+    } catch (error) {
+      if (!controller.signal.aborted && currentSession === sessionVersion.current) setMutationState({ status: 'readback-error', message: `读回尚未核对：${error.message} 未重新发送写入请求。`, ...requestEvidence(error) });
+    } finally {
+      if (currentSession === sessionVersion.current) writingRef.current = false;
+    }
+  }
+
   const latest = view.items[0];
   const analysis = latest?.adoptedAnalysis;
   const completeAnalysis = analysis && analysis.source === 'ai' && typeof analysis.summary === 'string'
@@ -331,7 +470,8 @@ export default function HomePage() {
   const reading = view.status === 'loading' || view.loadingMore;
   const loginBusy = loginState.status === 'loading';
   const canCopyCredential = hasCredential && view.httpStatus === 200 && ['content', 'empty'].includes(view.status);
-  const writeBusy = writeState.status === 'writing' || writeState.status === 'verifying';
+  const writeBusy = writeState.status === 'writing' || writeState.status === 'verifying'
+    || mutationState.status === 'writing' || mutationState.status === 'verifying';
 
   return (
     <div className="home-page">
@@ -424,7 +564,7 @@ export default function HomePage() {
 
       <details className="home-cloud-check" id="home-cloud-check" ref={checkDetails}>
         <summary><span>公网接线检查台</span><span className="home-cloud-health-badge">{health.status === 'success' ? '健康接口可用' : health.status === 'loading' ? '正在检查健康接口' : '健康接口待排查'}</span></summary>
-        <p className="home-cloud-check-intro">核对接口、私人记录和一次写入。已有凭证只保存在本页内存，不进入环境变量、浏览器存储或链接。</p>
+        <p className="home-cloud-check-intro">核对接口、私人记录及增删改查。已有凭证只保存在本页内存，不进入环境变量、浏览器存储或链接。</p>
         <div className="home-cloud-check-grid">
           <section aria-labelledby="cloud-health-title">
             <h3 id="cloud-health-title">01 · 健康与请求地址</h3>
@@ -490,6 +630,7 @@ export default function HomePage() {
               <p className="home-cloud-entry-date"><time dateTime={entry.entryDate}>{entry.entryDate}</time><span>正文版本 {entry.textVersion} · 记录版本 {entry.revision}</span></p>
               <p className="home-cloud-entry-text">{entry.text}</p>
               <p className="home-cloud-small">记录 ID：{entry.id}</p>
+              <div className="home-cloud-actions"><button type="button" onClick={() => selectEntry(entry)} disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt)}>选择此记录进行修改或删除</button></div>
             </li>)}</ul>
           </details>}
           {view.status === 'empty' && <p>HTTP 200 已返回：当前身份的记录总数为 0。</p>}
@@ -498,7 +639,7 @@ export default function HomePage() {
 
         <section className="home-cloud-write" aria-labelledby="cloud-write-title">
           <h3 id="cloud-write-title">04 · 一次虚构写入与读回核对</h3>
-          <p>点击下面的写入按钮，会把这段文本写入真实数据库的 entries 表，归属当前凭证用户；日期按设备当地今天填写。这里没有编辑或删除入口。</p>
+          <p>点击下面的写入按钮，会把这段文本写入真实数据库的 entries 表，归属当前凭证用户；日期按设备当地今天填写。写入并核对后，可在记录列表选择这条虚构记录，再验证修改和删除。</p>
           <form onSubmit={writeTest}>
             <label htmlFor="cloud-test-text">虚构测试原文</label>
             <textarea id="cloud-test-text" value={testText} onChange={(event) => setTestText(event.target.value)} disabled={writeBusy || loginBusy} aria-describedby="cloud-write-help" rows={3} />
@@ -513,6 +654,45 @@ export default function HomePage() {
             <p>{writeState.message}</p>
             <RequestEvidence value={writeState} />
             {writeReceipt && <p className="home-cloud-small">POST 结果：HTTP {writeReceipt.httpStatus} · 关联 ID：{writeReceipt.requestId || '响应未提供或浏览器未开放读取'}</p>}
+          </div>}
+        </section>
+        <section className="home-cloud-write" aria-labelledby="cloud-mutation-title">
+          <h3 id="cloud-mutation-title">05 · 单条修改、删除与 GET 核对</h3>
+          <p>先展开上方已读记录，选择要操作的一条。修改原文会增加正文版本并清除旧 AI 分析；删除需要再次确认，且无法撤销。验收请使用标有“虚构”的测试记录。</p>
+          {selectedEntry ? <>
+            <p className="home-cloud-small">选中 ID：{selectedEntry.id} · 预期记录版本：{selectedEntry.revision}</p>
+            <form onSubmit={(event) => mutateEntry('PATCH', event)}>
+              <label htmlFor="cloud-edit-date">记录日期</label>
+              <input id="cloud-edit-date" type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} disabled={writeBusy || loginBusy || Boolean(mutationReceipt)} required />
+              <label htmlFor="cloud-edit-text">用户原文 · 修改草稿</label>
+              <textarea id="cloud-edit-text" value={editText} onChange={(event) => setEditText(event.target.value)} disabled={writeBusy || loginBusy || Boolean(mutationReceipt)} rows={4} aria-describedby="cloud-edit-help" required />
+              <p id="cloud-edit-help" className="home-cloud-small">保留原始空格与换行，失败时保留草稿。保存后会请求 GET 逐页核对；版本冲突时请先刷新，再核对并重新选择。</p>
+              <div className="home-cloud-actions">
+                <button type="submit" disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt)}>保存修改并读回核对</button>
+                <button type="button" onClick={() => mutateEntry('DELETE')} disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt)}>删除这条云端记录</button>
+              </div>
+            </form>
+          </> : <p className="home-cloud-small">尚未选择记录。请在“查看已读记录的原文、日期与版本”中选择。</p>}
+          {mutationState.message && <div className="home-cloud-write-result" role={['error', 'readback-error'].includes(mutationState.status) ? 'alert' : 'status'} aria-busy={mutationState.status === 'writing' || mutationState.status === 'verifying'}>
+            <p>{mutationState.message}</p><RequestEvidence value={mutationState} />
+            {mutationReceipt && <p className="home-cloud-small">{mutationReceipt.operation} 已响应 HTTP {mutationReceipt.httpStatus}；实际 GET 结果尚未核对。</p>}
+          </div>}
+          {mutationReceipt && <div className="home-cloud-actions"><button type="button" onClick={verifyMutationAgain} disabled={writeBusy || loginBusy || reading || !hasCredential}>只读核对这次修改或删除</button></div>}
+          {patchEvidence && <div className="home-cloud-write-result home-cloud-write-success" data-testid="patch-evidence">
+            <p>PATCH 前后对比 · 已经实际 GET 核对</p>
+            <p className="home-cloud-small">记录 ID：{patchEvidence.before.id} · PATCH HTTP {patchEvidence.writeStatus} / GET HTTP {patchEvidence.httpStatus}</p>
+            <p>修改前：{patchEvidence.before.entryDate} · 正文版本 {patchEvidence.before.textVersion} · 记录版本 {patchEvidence.before.revision}</p>
+            <p className="home-cloud-entry-text">{patchEvidence.before.text}</p>
+            <p>修改后：{patchEvidence.after.entryDate} · 正文版本 {patchEvidence.after.textVersion} · 记录版本 {patchEvidence.after.revision}</p>
+            <p className="home-cloud-entry-text">{patchEvidence.after.text}</p>
+          </div>}
+          {deleteEvidence && <div className="home-cloud-write-result home-cloud-write-success" data-testid="delete-evidence">
+            <p>DELETE 后 GET 验证 · 已核对全部 {deleteEvidence.pages.length} 页</p>
+            <p className="home-cloud-small">目标 ID：{deleteEvidence.before.id} · DELETE HTTP {deleteEvidence.writeStatus} / GET HTTP {deleteEvidence.httpStatus}</p>
+            <p>删除前：{deleteEvidence.before.entryDate} · 记录版本 {deleteEvidence.before.revision}</p>
+            <p className="home-cloud-entry-text">{deleteEvidence.before.text}</p>
+            <p>删除后：GET 共 {deleteEvidence.total} 条，已读 {deleteEvidence.readCount} 条；全部返回中目标 ID 已消失。</p>
+            <details className="home-cloud-returned"><summary>查看删除后实际 GET 各页返回</summary><pre className="home-cloud-json">{JSON.stringify(deleteEvidence.pages, null, 2)}</pre></details>
           </div>}
         </section>
       </details>

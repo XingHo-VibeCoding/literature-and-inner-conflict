@@ -236,3 +236,51 @@ test('服务不接触浏览器持久存储，也不打印用户凭证', async t 
     }
   }
 });
+
+test('PATCH 发送预期版本和部分字段，保留原文且编码目标 ID', async () => {
+  const entryId = '虚构/Day22?目标';
+  const input = { text: '  【虚构·Day22修改】保留空格。\n下一行。  ', expectedRevision: 2 };
+  const saved = { ...ENTRY, id: entryId, text: input.text, revision: 3, textVersion: 3 };
+  const { client, calls } = setup(success(saved));
+  assert.deepEqual((await client.updateEntry({ token: TOKEN, entryId, input })).data, saved);
+  assert.equal(calls[0].url, ORIGIN + '/api/entries/' + encodeURIComponent(entryId));
+  assert.equal(calls[0].init.method, 'PATCH');
+  assert.deepEqual(JSON.parse(calls[0].init.body), input);
+  assert.equal(calls[0].init.headers['X-Client-Time-Zone'], 'Asia/Shanghai');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer ' + TOKEN);
+  assert.equal(calls[0].init.body.includes(TOKEN), false);
+});
+
+test('DELETE 的预期版本仅在 query，严格无 body 并核对删除目标', async () => {
+  const { client, calls } = setup(success({ deleted: true, entryId: ENTRY.id }));
+  const result = await client.deleteEntry({ token: TOKEN, entryId: ENTRY.id, expectedRevision: 2 });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(calls[0].init.method, 'DELETE');
+  assert.equal(calls[0].url, ORIGIN + '/api/entries/' + ENTRY.id + '?expectedRevision=2');
+  assert.equal(Object.hasOwn(calls[0].init, 'body'), false);
+  assert.equal(calls[0].init.headers['Content-Type'], undefined);
+  for (const data of [{ deleted: false, entryId: ENTRY.id }, { deleted: true, entryId: '另一条' }, { deleted: true, entryId: ENTRY.id, extra: true }]) {
+    await assert.rejects(setup(success(data)).client.deleteEntry({ token: TOKEN, entryId: ENTRY.id, expectedRevision: 2 }), error => error.code === 'INVALID_RESPONSE');
+  }
+});
+
+test('PATCH/DELETE 无效 ID、版本、未登记字段和空修改均不发请求', async () => {
+  const { client, calls } = setup(success(ENTRY));
+  for (const input of [{ expectedRevision: 2 }, { text: '正文', expectedRevision: 0 }, { text: null, expectedRevision: 2 }, { entryDate: '2026-02-30', expectedRevision: 2 }, { text: '正文', expectedRevision: 2, ownerId: '不允许' }]) {
+    await assert.rejects(client.updateEntry({ token: TOKEN, entryId: ENTRY.id, input }), error => error.code === 'INVALID_INPUT');
+  }
+  for (const entryId of ['', undefined, '含\n换行']) {
+    await assert.rejects(client.deleteEntry({ token: TOKEN, entryId, expectedRevision: 2 }), error => error.code === 'INVALID_INPUT');
+  }
+  await assert.rejects(client.deleteEntry({ token: TOKEN, entryId: ENTRY.id, expectedRevision: '2' }), error => error.code === 'INVALID_INPUT');
+  assert.equal(calls.length, 0);
+});
+
+test('PATCH/DELETE 的不存在及版本冲突中文错误原样返回，不自动重试', async () => {
+  for (const [status, code, message] of [[404, 'ENTRY_NOT_FOUND', '找不到这条记录，请重新读取列表。'], [409, 'VERSION_CONFLICT', '记录已变化，请重新读取。']]) {
+    const { client, calls } = setup(failure(code, message), status);
+    await assert.rejects(client.updateEntry({ token: TOKEN, entryId: ENTRY.id, input: { text: '【虚构】修改', expectedRevision: 2 } }), error => error.httpStatus === status && error.message === message);
+    await assert.rejects(client.deleteEntry({ token: TOKEN, entryId: ENTRY.id, expectedRevision: 2 }), error => error.httpStatus === status && error.message === message);
+    assert.equal(calls.length, 2);
+  }
+});

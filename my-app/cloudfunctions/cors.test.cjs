@@ -159,17 +159,17 @@ test('禁止 localhost、预览域名、伪造子域名与 null；GET/POST 均�
   });
 });
 
-test('有效 GET/POST 预检返回 204 与限定的方法和请求头，不鉴权或访问数据库', async () => {
+test('有效 GET/POST/PATCH/DELETE 预检返回 204 与限定的方法和请求头，不鉴权或访问数据库', async () => {
   const fixture = readsFixture();
   await localServer(fixture.create, async (base) => {
-    for (const method of ['GET', 'POST']) {
-      const response = await fetch(base + '/api/entries', {
+    for (const method of ['GET', 'POST', 'PATCH', 'DELETE']) {
+      const response = await fetch(base + (['PATCH', 'DELETE'].includes(method) ? '/api/entries/day22-fictional-entry' : '/api/entries'), {
         method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': method,
           'Access-Control-Request-Headers': 'authorization, CONTENT-TYPE, accept, X-Client-Time-Zone' },
       });
       assert.equal(response.status, 204);
       assertCors(response);
-      assert.equal(response.headers.get('access-control-allow-methods'), 'GET, POST, OPTIONS');
+      assert.equal(response.headers.get('access-control-allow-methods'), 'GET, POST, PATCH, DELETE, OPTIONS');
       assert.equal(response.headers.get('access-control-allow-headers'),
         'Accept, Authorization, Content-Type, X-Client-Time-Zone');
       assert.equal(await response.text(), '');
@@ -186,7 +186,7 @@ test('预检拒绝缺失或非法方法、未知请求头、无效列表或禁�
   const fixture = readsFixture();
   await localServer(fixture.create, async (base) => {
     for (const extraHeaders of [
-      {}, { 'Access-Control-Request-Method': 'DELETE' }, { 'Access-Control-Request-Method': 'get' },
+      {}, { 'Access-Control-Request-Method': 'PUT' }, { 'Access-Control-Request-Method': 'get' },
       { 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'X-Unknown' },
       { 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'Authorization,,Accept' },
       { Origin: 'http://localhost:5173', 'Access-Control-Request-Method': 'POST' },

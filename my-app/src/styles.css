@@ -630,3 +630,8 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
 .home-page .home-cloud-dev-login { padding-bottom: 24px; margin-bottom: 24px; border-bottom: 1px solid var(--home-line); }
 .home-page .home-cloud-dev-login h4 { margin: 0 0 10px; color: var(--home-green); font-size: 1rem; }
 .home-page .home-cloud-dev-login input + label { margin-top: 16px; }
+
+/* Day 22 修改与删除沿用检查台样式，原文及响应保留换行。 */
+.home-page .home-cloud-write input + label { margin-top: 16px; }
+.home-page .home-cloud-write-result .home-cloud-entry-text { white-space: pre-wrap; }
+.home-page .home-cloud-json { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; font-size: 0.8125rem; line-height: 1.8; }

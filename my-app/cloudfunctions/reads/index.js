@@ -46,7 +46,7 @@ function readJson(request) {
 }
 
 function createServer({ authenticate, read, write, allowedOrigin, logError = () => {}, logEvent = () => {} }) {
-  const cors = createCors({ allowedOrigin, methods: ['GET', 'POST'] });
+  const cors = createCors({ allowedOrigin, methods: ['GET', 'POST', 'PATCH', 'DELETE'] });
   return http.createServer(async (request, response) => {
     const requestId = randomUUID();
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -66,41 +66,65 @@ function createServer({ authenticate, read, write, allowedOrigin, logError = () 
       try { url = new URL(request.url, 'http://localhost'); } catch {
         throw new ApiError(400, 'INVALID_INPUT', '请求地址无效。');
       }
-      let kind, bookId;
+      let kind, bookId, entryId;
       if (url.pathname === '/api/entries') kind = 'entries';
       else if (url.pathname === '/api/favorites') kind = 'favorites';
       else {
-        const match = /^\/api\/books\/([^/]+)\/notes$/.exec(url.pathname);
-        if (!match) throw new ApiError(404, 'NOT_FOUND', '接口不存在。');
-        kind = 'notes';
-        try { bookId = decodeURIComponent(match[1]); } catch {
-          throw new ApiError(400, 'INVALID_INPUT', '作品 ID 格式无效。');
+        const entryMatch = /^\/api\/entries\/([^/]+)$/.exec(url.pathname);
+        const noteMatch = /^\/api\/books\/([^/]+)\/notes$/.exec(url.pathname);
+        if (!entryMatch && !noteMatch) throw new ApiError(404, 'NOT_FOUND', '接口不存在。');
+        kind = entryMatch ? 'entry' : 'notes';
+        let id;
+        try { id = decodeURIComponent((entryMatch || noteMatch)[1]); } catch {
+          throw new ApiError(400, 'INVALID_INPUT', '资源 ID 格式无效。');
         }
-        if (!bookId || bookId.length > 128 || /[\s/\u0000-\u001f]/.test(bookId)) {
-          throw new ApiError(400, 'INVALID_INPUT', '作品 ID 格式无效。');
+        if (!id.trim() || id.length > (entryMatch ? 512 : 128) || /[\/\u0000-\u001f\u007f]/.test(id)
+          || (!entryMatch && /\s/.test(id))) {
+          throw new ApiError(400, 'INVALID_INPUT', '资源 ID 格式无效。');
         }
+        if (entryMatch) entryId = id;
+        else bookId = id;
       }
-      writing = kind === 'entries' && request.method === 'POST';
-      if (request.method !== 'GET' && !writing) {
-        response.setHeader('Allow', kind === 'entries' ? 'GET, POST' : 'GET');
-        throw new ApiError(405, 'METHOD_NOT_ALLOWED', kind === 'entries'
-          ? '此接口仅支持 GET 或 POST 请求。' : '此接口仅支持 GET 请求。');
+      const methods = kind === 'entries' ? ['GET', 'POST']
+        : kind === 'entry' ? ['PATCH', 'DELETE'] : ['GET'];
+      writing = methods.includes(request.method) && request.method !== 'GET';
+      if (!methods.includes(request.method)) {
+        response.setHeader('Allow', methods.join(', '));
+        throw new ApiError(405, 'METHOD_NOT_ALLOWED', `此接口仅支持 ${methods.join('、')} 请求。`);
       }
-      if (!writing && (request.headers['transfer-encoding'] || Number(request.headers['content-length'] || 0) !== 0)) {
-        throw new ApiError(400, 'INVALID_INPUT', 'GET 请求不能包含请求体。');
+      const jsonBody = request.method === 'POST' || request.method === 'PATCH';
+      if (!jsonBody && (request.headers['transfer-encoding'] || Number(request.headers['content-length'] || 0) !== 0)) {
+        throw new ApiError(400, 'INVALID_INPUT', `${request.method} 请求不能包含请求体。`);
       }
-      if (writing && url.search) throw new ApiError(400, 'INVALID_INPUT', '新建日精进不接受查询参数。');
+      let expectedRevision;
+      if (request.method === 'DELETE') {
+        const revisionText = url.searchParams.get('expectedRevision');
+        if ([...url.searchParams.keys()].length !== 1 || !/^[1-9]\d*$/.test(revisionText || '')
+          || !Number.isSafeInteger(Number(revisionText))) {
+          throw new ApiError(400, 'INVALID_INPUT', '删除必须且只能提供一个有效的 expectedRevision 查询参数。');
+        }
+        expectedRevision = Number(revisionText);
+      } else if (writing && url.search) {
+        throw new ApiError(400, 'INVALID_INPUT', '新增或修改日精进不接受查询参数。');
+      }
       const ownerId = await authenticate(request.headers.authorization);
       let data;
       if (writing) {
-        const body = await readJson(request);
-        data = await write({ ownerId, body, timeZone: request.headers['x-client-time-zone'] });
+        const body = jsonBody ? await readJson(request) : undefined;
+        data = await write({ ownerId, body, operation: request.method, entryId, expectedRevision,
+          timeZone: request.headers['x-client-time-zone'] });
       } else data = await read({ kind, ownerId, bookId, params: url.searchParams });
-      const status = writing ? 201 : 200;
+      const status = request.method === 'POST' ? 201 : 200;
       response.writeHead(status);
       response.end(JSON.stringify({ ok: true, data, error: null }));
       // 只记录关联 ID 与结果，不记录原文、日期、用户身份、凭证或请求头。
-      if (writing) { try { logEvent({ requestId, method: 'POST', path: '/api/entries', status, code: 'CREATED' }); } catch {} }
+      if (writing) {
+        try {
+          logEvent({ requestId, method: request.method,
+            path: kind === 'entry' ? '/api/entries/:entryId' : '/api/entries', status,
+            code: request.method === 'POST' ? 'CREATED' : request.method === 'PATCH' ? 'UPDATED' : 'DELETED' });
+        } catch {}
+      }
     } catch (error) {
       request.resume();
       const known = error instanceof ApiError;

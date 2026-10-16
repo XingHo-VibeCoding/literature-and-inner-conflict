@@ -1,6 +1,6 @@
 # 文学与内心冲突｜API 契约（Day 15 创建，Day 16 补充表结构）
 
-编制日期：2026-10-09；接口契约核对日期：2026-10-12；Day16表结构补充日期：2026-10-13；Day17验证更新日期：2026-10-14；Day20继续核对日期：2026-10-15（Asia/Shanghai）。状态：**已由用户确认的第3周接口契约**。Day17三个列表GET已实现、部署并通过真实测试用户HTTP200核对；格式A、范围A、身份A，29项本地模拟检查通过。entries改库后新正文和版本2已同步到接口与核验页；两次感悟原文及收藏均保留，最终两张截图已核对。Day17的12文件已提交推送。Day18于2026-10-14完成POST /api/entries部署、真实201/409/400、数据库单行与GET读回核对，56项本地模拟检查通过；Day18的10文件提交范围已获用户确认。其余15项业务接口仍为未来占位；历史证据保留文末。
+编制日期：2026-10-09；接口契约核对日期：2026-10-12；Day16表结构补充日期：2026-10-13；Day17验证更新日期：2026-10-14；Day20继续核对日期：2026-10-15（Asia/Shanghai）。状态：**已由用户确认的第3周接口契约**。Day17三个列表GET已实现、部署并通过真实测试用户HTTP200核对；格式A、范围A、身份A，29项本地模拟检查通过。entries改库后新正文和版本2已同步到接口与核验页；两次感悟原文及收藏均保留，最终两张截图已核对。Day17的12文件已提交推送。Day18于2026-10-14完成POST /api/entries部署、真实201/409/400、数据库单行与GET读回核对，56项本地模拟检查通过；Day18的10文件提交范围已获用户确认。Day18完成时其余15项业务接口仍为未来占位；历史证据保留文末。Day22于2026-10-15按用户确认沿用 entries 契约补齐 PATCH /api/entries/:entryId 和 DELETE /api/entries/:entryId；当前代码状态与验证边界见第4.5、4.6节及文末Day22追加。
 
 ## 1. 范围、事实与 AI 推导
 
@@ -306,7 +306,7 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 
 ## 4. 接口逐项定义
 
-下列JSON是实际传输形状样例，没有省略号；业务响应已统一为第2节的三键形状。health维持已验证的独立响应；Day17三项列表GET已部署并通过真实HTTP200与截图核对。Day18的POST /api/entries已部署，正常201、重复409、缺字段400、数据库单行与GET读回均有直接证据；读取和写入共56项本地模拟检查通过。其余15项业务接口仍为**未来占位**。普通业务响应样例另含 `X-Request-Id: demo-request-001` 响应头；两项未来AI响应头使用各自请求body中的requestId。每项列出自己的特定错误；发生基础请求格式错误时也遵守第2节413/415约定。
+下列JSON是实际传输形状样例，没有省略号；业务响应已统一为第2节的三键形状。health维持已验证的独立响应；Day17三项列表GET已部署并通过真实HTTP200与截图核对。Day18的POST /api/entries已部署，正常201、重复409、缺字段400、数据库单行与GET读回均有直接证据；读取和写入共56项本地模拟检查通过。Day22另实现两项 PATCH/DELETE 的代码；其余13项业务接口仍为**未来占位**。Day22的本地检查、部署和真库验证须分别依据文末实际证据，不把代码实现等同上线。普通业务响应样例另含 `X-Request-Id: demo-request-001` 响应头；两项未来AI响应头使用各自请求body中的requestId。每项列出自己的特定错误；发生基础请求格式错误时也遵守第2节413/415约定。
 
 ### 4.1 GET /api/health
 
@@ -383,7 +383,10 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 
 **Day 18 用户确认的防重规则（2026-10-14）：** 同一已验证用户、同一 entryDate、完全相同原文的记录重复提交返回 HTTP 409，code=DUPLICATE_ENTRY，中文 message「这一天已经保存过完全相同的原文，请勿重复提交。」，data=null、retryable=false。同日不同原文允许保存；不同用户互不误拒。原文不去空白、不做 Unicode 规范化，相同日期仅在用于校验时检查，不改用户输入。
 
-**当前新增流程的并发保护：** 服务端依据用户身份、日期、完整原文的 JSON 元组生成 SHA256 不透明 ID；相同输入命中相同数据库主键，固定单条 INSERT ... ON CONFLICT(id) DO NOTHING 仅返回实际新增行，未新增则409。旧随机 ID 记录由同一语句的 NOT EXISTS 按原文精确查重；不新增数据库对象、重置数据或修改读取权限。此方案覆盖本日 POST 新增流程，直接 SQL 写入不受本接口保护；未来实现 PATCH 前须调整可编辑记录的防重模型，避免旧 ID 与修改后原文不一致导致过度拒绝。SHA256 使用工程上的碰撞抗性，不声称数学绝无碰撞。
+**Day18新增流程的并发保护（历史方案，Day22已替换）：** 服务端依据用户身份、日期、完整原文的 JSON 元组生成 SHA256 不透明 ID；相同输入命中相同数据库主键，固定单条 INSERT ... ON CONFLICT(id) DO NOTHING 仅返回实际新增行，未新增则409。旧随机 ID 记录由同一语句的 NOT EXISTS 按原文精确查重；不新增数据库对象、重置数据或修改读取权限。此方案覆盖本日 POST 新增流程，直接 SQL 写入不受本接口保护；未来实现 PATCH 前须调整可编辑记录的防重模型，避免旧 ID 与修改后原文不一致导致过度拒绝。SHA256 使用工程上的碰撞抗性，不声称数学绝无碰撞。
+
+**Day22当前身份与防重保护：** 用户已确认修复“删除后同文新建复用旧ID、旧请求误删新记录”的风险。每次新建使用独立随机 `entry-UUID`，保留已有记录ID和所有关联；删除后同文重建获得新ID，旧ID的PATCH/DELETE返回404。数据库迁移 [day22-entry-identity.sql](./db/day22-entry-identity.sql) 新增固定UTF-8 SHA256函数和 `(owner_id, entry_date, 原始text摘要)` 唯一索引；原文不trim、不规范化。相同用户同日期相同原文的并发新建由数据库唯一索引阻止，INSERT保留精确NOT EXISTS并使用ON CONFLICT DO NOTHING，未新增返回409 DUPLICATE_ENTRY。PATCH碰到同日同原文也返回409且不覆盖数据。SHA256是工程碰撞抗性，摘要冲突会安全拒绝，不自动合并或覆盖。迁移发现已有重复或摘要冲突即中文报错并整体回滚，不清理记录；必须先成功执行迁移再部署新版函数。本地单进程结果不代替CloudBase多连接并发实测。
+
 
 **校验与写入边界：** JSON 请求体最多64 KiB；拒绝非法 UTF-8/JSON、非对象、未登记字段、原文空字符及不成对代理项，不替换无法保存的字符。必填日期必须为0001到9999年的有效 YYYY-MM-DD，不能晚于 X-Client-Time-Zone 所指今天；省略时区默认 Asia/Shanghai，无效时区返回400。正文去首尾空白后按 Unicode 码点校验1–5000，存储仍保留原始空格、换行。ownerId由真实 Bearer 验证确定；版本、时间和可空对象由既有数据库默认值产生，原文由参数化 SQL 保存。
 
@@ -391,7 +394,7 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 
 ### 4.5 PATCH /api/entries/:entryId
 
-- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
+- 实现状态：**已实现、已部署；PATCH公网与数据库验收已通过（2026-10-16）**。后端见 `cloudfunctions/reads/index.js`、`writer.js`、`entriesRepository.js`、`db.js`；前端沿用首页云端检查台。真实虚构记录取得PATCH200及GET200，日期和ID保持一致，正文版本与记录版本从1/1升至2/2；用户SELECT全文精确比对为true，第一张交付图已取得。实际证据与独立验证边界见文末Day22验收进展。
 
 - 用途：修改当前记录；原文变化时原子清除旧分析。
 - 页面依据：`src/services/entryModel.js reviseEntry；src/services/localStore.js updateEntry`。
@@ -410,11 +413,11 @@ noteSavedAt保留原感悟保存时间；bookTitle是入库时的来源快照。
 {"ok":true,"data":{"id":"demo-entry-001","entryDate":"2026-10-08","text":"【虚构·契约样例】今天读完一页后，我又记下一个问题。\n","textVersion":2,"revision":2,"createdAt":"2026-10-08T01:00:00.000Z","updatedAt":"2026-10-08T01:03:00.000Z","adoptedAnalysis":null,"origin":null},"error":null}
 ```
 
-错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 ENTRY_NOT_FOUND；409 VERSION_CONFLICT；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。
+错误返回：400 INVALID_INPUT；401 UNAUTHENTICATED；404 ENTRY_NOT_FOUND；409 VERSION_CONFLICT；409 DUPLICATE_ENTRY；413 PAYLOAD_TOO_LARGE；415 UNSUPPORTED_MEDIA_TYPE；500 WRITE_FAILED。
 
 ### 4.6 DELETE /api/entries/:entryId
 
-- 实现状态：**未来占位，未实现**；此次仅同步已确认的统一业务响应形状，不增加接口代码。
+- 实现状态：**已实现、已部署；DELETE公网、完整GET及正式数据库SELECT零行验收已通过（2026-10-16）**。后端见 `cloudfunctions/reads/index.js`、`writer.js`、`entriesRepository.js`、`db.js`；前端沿用首页云端检查台。DELETE200后GET200共1页8条，无目标ID；正确环境的独立SELECT返回matching_rows=0，第二张交付图已取得，增删改查核心闭环通过。二次确认代码已实现、本地取消零请求测试通过；本轮真实弹窗确认过程未观察、真实取消未执行，作为独立边界保留，不将其误写为核心CRUD未完成。
 
 - 用途：删除日精进及其仍对应的入库关联。
 - 页面依据：`src/services/localStore.js deleteEntry`。
@@ -841,3 +844,214 @@ outcome固定枚举与响应关系：
 - 用户原话“允许本次临时复制并清空”已具体授权本轮交接；DEV-only复制入口已完成并实际使用一次。公网凭证填写前后均实际清空剪贴板，后续清空Cua内存临时token；不把凭证写入文件、日志、URL或输出。早期审批拒绝和等待答复保留为历史。
 - 用户亲眼查看F12后明确原话“公网接口地址，状态 200”，因此F12标准已完成·用户人工确认；代理未直接操作Network。公开生产JS的HTTPS GET200、318733字节，其SHA256为2df491d1a0d77066d66797e39df80ea5298be8910b91d89aff6ac90f86a07f25，与本地对应JS一致。
 - 工具视觉检查看过最新首页的三行虚构文字与数据库更新时间，但截图不含地址栏、未保存交图文件；完整公网地址栏与数据同框的规定截图仍需用户保留，不能声称已交图。同伴文字仅提供，代理未发送且无反馈。17个Day20文件已由用户核对并于2026-10-15明确授权“确认提交并推送”；实际结果以Git历史与本地日志为准。
+
+
+## Day22追加｜修改、删除与数据库前后对比
+
+日期：2026-10-15（Asia/Shanghai）。用户已确认“沿用 entries 和现有契约”，本项目不新增 checkins 表或接口；可改字段仅 entryDate、text。完成状态、备注等未登记字段返回400。今日不增加批量操作、用户系统或软删除。
+
+### 接口行为与删除确认位置
+
+- PATCH 若使记录与本人同日另一条原文完全相同，返回409 DUPLICATE_ENTRY，原记录及版本保持不变。
+- PATCH 使用 JSON body，必须有 expectedRevision（大于等于1的安全整数）以及 entryDate/text 中至少一项；不传的字段保持原值，原文空格和换行原样保存。正文变化才增加 textVersion 并清空旧 adoptedAnalysis；成功修改增加 revision，更新 updatedAt，保持 id、createdAt 和 origin。
+- DELETE 使用 `?expectedRevision=当前记录版本`，不发送请求体。仅删除可信身份所属的指定记录；不存在或属于他人的 ID 统一返回404 ENTRY_NOT_FOUND 和中文说明，避免暴露其他用户数据。旧版本返回409 VERSION_CONFLICT，先重新读取再由用户决定，不自动重试。
+- 删除会同时清理本条收藏及仍指向本条的阅读入库关联，保留 reading_notes 的感悟原文；关联不一致时返回409 NOTE_LINK_CONFLICT。固定参数化SQL限制写入范围，不接受客户端SQL、ownerId或角色。
+- 二次确认位于首页“公网接线检查台”的单条记录删除操作中，发出 DELETE 前展示记录日期、ID和原文预览，说明删除后无法由页面撤销。选择取消时不发送 DELETE。删除比新增更容易出事，因为它移除现有数据，还可能影响关联；确认入口和后端版本校验分别防止误点与使用过期页面删除。
+- 修改或删除成功后，页面继续通过 GET /api/entries 分页读回；只有找到修改后同一ID的匹配值，或完整读完所有页确认删除ID不存在，才显示核对通过。GET失败或读回不匹配应明确显示尚未核对，不把接口成功等同数据库最终证据。
+
+### 虚构数据的增删改查验证顺序
+
+先按下方顺序执行Day22防重迁移，再部署新版读写函数及首页构建，并在自己的浏览器准备已有真实用户短期凭证。凭证只留页面内存，不发到聊天或写入文件。只使用新建且标有“虚构·Day22”的记录，不操作历史原文。
+
+1. POST /api/entries 新建下面的虚构原文，记下成功响应的 id；HTTP应为201，textVersion/revision均1。
+2. GET /api/entries 找到同一ID，执行下面的SELECT保存修改前结果。
+3. PATCH 同一ID，只传修改后text及 expectedRevision=1；HTTP应为200。再GET及SELECT，正文变为修改后、日期不变、两个版本变为2。保存第一张截图，展示前后正文和版本。
+4. 点击该条删除并先取消；GET/SELECT仍应为1行。再点击删除，核对二次确认中的ID、日期和原文后确认；DELETE请求的 expectedRevision 应为2，HTTP应为200且 data={deleted:true,entryId:本条ID}。
+5. 完整读取 GET /api/entries 的所有分页，目标ID不在 items 中；再次SELECT应返回0行、count(*)=0。保存第二张截图，包含DELETE结果、同一ID及GET里已消失的证据。只看到第一页没有该条不能证明删除成功。
+
+创建请求示例（用当日有效日期）：
+
+```json
+{"entryDate":"2026-10-15","text":"【虚构·Day22接口验证】修改前：读完一页，记下一个问题。"}
+```
+
+修改请求示例：
+
+```json
+{"text":"【虚构·Day22接口验证】修改后：读完两页，记下两个问题。","expectedRevision":1}
+```
+
+### 数据库 SELECT 前后对比方法
+
+在同一 CloudBase 环境的SQL编辑器执行，只替换下方两个占位符：可信身份服务已核验的UID，以及本次POST实际返回的ID。以下语句只查询，不直接修改或删除记录。PATCH前、PATCH后、取消删除后、确认DELETE后，分别执行同一组查询：
+
+```sql
+SELECT id, entry_date, text, text_version, revision,
+       created_at, updated_at, adopted_analysis, origin
+FROM public.entries
+WHERE owner_id = '<已核验测试用户UID>'
+  AND id = '<本次POST返回的ID>';
+
+SELECT count(*) AS matching_rows
+FROM public.entries
+WHERE owner_id = '<已核验测试用户UID>'
+  AND id = '<本次POST返回的ID>';
+```
+
+| 时点 | matching_rows | text | text_version / revision |
+| --- | --- | --- | --- |
+| POST/GET后、PATCH前 | 1 | 修改前虚构原文 | 1 / 1 |
+| PATCH/GET后 | 1 | 修改后虚构原文 | 2 / 2 |
+| 取消二次确认后 | 1 | 修改后虚构原文 | 2 / 2 |
+| DELETE及完整GET后 | 0 | 查询无行 | 查询无行 |
+
+上述是预期，不是已取得的真库结果。只有实际响应、数据库查询与页面证据一致，才能把对应项记为真库验证通过。
+
+补充错误验证：对明确不存在的虚构ID执行合法PATCH/DELETE，预期404与中文 ENTRY_NOT_FOUND；对存在的虚构记录带旧 expectedRevision，预期409且SELECT原值不变。PATCH空字段、空白原文、无效日期、未登记字段或缺版本均应400且不写库。真实跨用户及并发验证须另列实际执行状态。
+
+### 部署顺序与历史验证边界
+
+先在同一环境SQL编辑器整段执行 `db/day22-entry-identity.sql`。它只新增必要的确定性摘要函数和唯一索引，不改已有ID或原文；普通读取可继续，创建索引期间短暂阻止写入。若中文提示已有重复，立即停下让用户核对，不自行删除或去重；若编辑器提示事务处于错误状态，执行 `ROLLBACK;` 结束失败事务。迁移后核对索引：
+
+```sql
+SELECT c.relname, i.indisunique, i.indisvalid,
+       pg_catalog.pg_get_indexdef(i.indexrelid) AS index_definition
+FROM pg_catalog.pg_index AS i
+JOIN pg_catalog.pg_class AS c ON c.oid = i.indexrelid
+JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public'
+  AND c.relname = 'day22_entries_owner_date_text_sha256_uq';
+```
+
+预期恰好1行、indisunique和indisvalid均true，index_definition明确为public.entries上的owner_id（C排序规则）、entry_date及day22_entry_text_sha256(text)唯一索引。IF NOT EXISTS不会修复同名错误索引；定义不符时停下核对，不将“迁移无报错”当作约束正确。没有此结果时不要部署新版写接口。PostgreSQL写CTE的执行与RETURNING依据见[官方文档](https://www.postgresql.org/docs/17/queries-with.html#QUERIES-WITH-MODIFYING)。
+
+部署沿用 literature-reads 和既有 /api/entries 前缀，网关需透传带ID子路径及PATCH/DELETE方法；新版函数CORS仅为既有精确来源增加这两种方法。上传 cloudfunctions/reads.zip 后核对部署状态，静态托管上传本次 dist 构建，再刷新浏览器核对新入口。无需新建函数、账号、表或密钥。
+
+**2026-10-15历史停点（后续进展见文末2026-10-16验收节）：** 当时电脑控制因无法可靠识别Edge当前网址，被安全机制终止；已停止电脑操作。新版函数、前端上传、公网方法透传、真实带身份CRUD、数据库SELECT、真实浏览器二次确认及两张交图均未验证。本地代码与检查不代替这些结果。提交推送仍须用户核对Day22文件清单并明确确认。
+
+
+### Day22安全修复记录与验证状态
+
+独立审查后用虚构内存数据复现：原内容哈希ID在硬删除后被同文POST复用，旧ID和revision=1的DELETE会误删重建记录。用户明确选择“方案 A：修复并补迁移、验证（推荐）”；上述独立UUID及唯一索引是经确认的必要修复，不自动加入软删除。
+
+除主CRUD外，修复后需核对：POST A → DELETE A → POST同文A取得不同新ID → 使用旧ID和旧版本PATCH/DELETE均404，新记录仍在；相同内容重复写入409；PATCH撞重复409且SELECT旧值不变；迁移遇旧重复会中文报错、回滚并保留原文。测试结果须据实追加；本段记录的2026-10-15时点，云端这些补充场景均未执行，不将本地验证冒充正式多连接或负面场景实测。
+
+
+### Day22本地实际验证结果（2026-10-15）
+
+- 最终 `npm test`：190项通过、0失败、0跳过；包含后端72项、前端PATCH/DELETE确认及读回流程，以及既有本地记录/阅读回归。完整命令输出在本地忽略文件 `_logs/day22-tests.txt`。
+- 2026-10-15当时构建状态：`npm run build`通过，33模块；产物在被忽略的dist，当时尚未上传。前端代码在该构建后未再改动；后续修复仅涉及后端、迁移、测试与契约。其后公网文件校验证据见2026-10-16继续节。
+- 隔离的PGlite内存PostgreSQL实际运行既有schema及本次迁移、真实repository/writer SQL，共21项通过；不是SQL字符串断言。覆盖迁移重复执行、完整CRUD、逐字原文与日期/版本/分析保护、中文404/409、owner隔离、RESTRICT关联清理、收藏级联、保留感悟原文和时间、失败整笔回滚、ID不复用及旧请求拒绝、PATCH撞重、唯一索引直接拒绝不同ID重复行、5000字原文和固定UTF8摘要、旧重复数据迁移失败保护。
+- 2026-10-15当时验证边界：同进程双POST验证仅一条成功；PGlite单连接排队结果不能冒充CloudBase多连接并发。当时正式环境唯一约束、角色权限、迁移执行与真实并发仍未验证；其后索引和实际接口结果分别追加，正式多连接并发仍不冒称已实测。
+- SQL输出与虚构前后快照保存在本地忽略的 `_logs/day22-sql-output.txt`、`_logs/day22-sql-evidence.json`；先前ID复用复现保存在 `_logs/day22-aba-before.json`。文中1/1到2/2表格是简化单次PATCH的真库预期，实际本地脚本包含额外日期修改/同文修改，具体版本以快照为准，不拼成未发生的真库历史。
+- 本轮临时SQL测试依赖仅在 `_logs/day22-sql-runtime`，没有修改项目package.json、package-lock.json或引入生产依赖。前端机械检测在本次新增代码中未报告问题，仅报告3处既有样式，未扩展改动范围。独立审查复核修复后未发现新的实质问题。
+- 2026-10-15历史停点：电脑控制已因无法确认Edge当前网址而停止；当时公网新版、迁移实际执行、GET/SELECT前后对比、真实浏览器确认和两张交付截图均未完成，未提交、未推送。当时可刷新本地页面查看新增入口，公网尚需完成迁移和上传。其后实际结果见后续日期节，不覆盖这段过程。
+
+
+### Day22改动文件清单（待用户核对，尚未提交）
+
+| 文件 | 所属任务 | 本次用途 |
+| --- | --- | --- |
+| `api-contract.md` | Day22 | 接口已实现状态、字段/错误、迁移顺序与SELECT前后验证方法 |
+| `cloudfunctions/reads/index.js` | Day22 | PATCH/DELETE路由、请求限制、精确来源预检 |
+| `cloudfunctions/reads/writer.js` | Day22 | 字段/版本校验、独立创建ID与中文错误 |
+| `cloudfunctions/reads/entriesRepository.js` | Day22 | 固定参数化原子修改、关联清理及数据库防重 |
+| `cloudfunctions/reads/db.js` | Day22 | 固定写SQL白名单、唯一冲突安全映射 |
+| `cloudfunctions/reads/writes.test.js` | Day22 | 接口、关联保护、防重及ID不复用回归 |
+| `cloudfunctions/cors.test.cjs` | Day22 | 新增方法预检允许与未登记方法拒绝 |
+| `src/services/publicApi.js` | Day22 | 前端PATCH/DELETE请求与响应校验 |
+| `src/services/publicApi.test.js` | Day22 | 客户端字段、版本和请求格式验证 |
+| `src/pages/HomePage.jsx` | Day22 | 单条编辑、删除二次确认、前后对比及GET全分页核对 |
+| `src/pages/homeCloudFlow.test.js` | Day22 | 虚构交互闭环、取消/冲突/迟到与分页核对 |
+| `src/styles.css` | Day22 | 复用检查台的新增编辑与原文对比样式 |
+| `db/day22-entry-identity.sql` | Day22 | 经用户确认的创建ID安全修复所需防重迁移 |
+| `vite.config.js` | Day22 | 经用户确认，补齐本地单条entries路径代理，保持既有来源与认证代理 |
+
+日志、虚构SQL证据、临时SQL引擎、dist、reads.zip及.env.local均已通过git check-ignore核对排除；不纳入提交。Git暂存区为空。待真实上线闭环、规定截图完成且用户核对文件清单后，才按Day22标题及“改了什么／加了什么”两行说明提交推送。
+
+### Day22正式数据库索引核对通过（2026-10-15）
+
+用户人工执行迁移后，截图codex-clipboard-ea6e4fd4-c752-4d5d-a6f1-96a15ffe189d.png直接显示目标索引查询1行、indisunique=true、indisvalid=true。此前截图定义尾部被截断，随后用户提供完整原始查询结果：
+
+```sql
+CREATE UNIQUE INDEX day22_entries_owner_date_text_sha256_uq ON public.entries USING btree (owner_id COLLATE "C", entry_date, day22_entry_text_sha256(text))
+```
+
+AI核对：完整定义与已确认的Day22迁移一致，目标表、三项键、C排序规则、唯一性和有效性全部匹配，正式数据库索引这项部署前置检查已通过。迁移由用户在CloudBase执行，代理没有代点或改库。此前“迁移未验证”保留为历史；本次更新仅覆盖索引核对，不代表新版函数已部署或真实CRUD已通过。
+
+2026-10-15该时点的下一步（历史计划）：仅更新既有literature-reads，上传本地cloudfunctions/reads.zip，沿用现有运行时、启动与环境变量配置，完成部署后核对函数状态和代码一致性。当时未上传、未取得部署结果；网关、前端上线、真实PATCH/DELETE/GET/SELECT及两张规定截图仍待完成。其后公网路由、前端及接口验收见后续节。
+
+### Day22后端公网路由与预检核对通过（2026-10-15）
+
+用户部署截图codex-clipboard-f11273c7-2cf7-44af-8e67-43ad8880b566.png显示既有literature-reads状态正常、Node.js20.19/9000及代码文件树；截图未展示完整部署回执或远端代码哈希，不能单靠文件树认定所有新版业务行为正确。
+
+随后代理对既有公网API实际执行7项不带凭证的检查，指定不存在的虚构ID，不访问SQL服务或写库：
+
+| 检查 | 实际结果 |
+| --- | --- |
+| GET /api/entries?limit=1基线 | 401 UNAUTHENTICATED，三键封套 |
+| GET指定虚构单条路径 | 405，Allow为PATCH, DELETE |
+| PATCH指定虚构路径、不带凭证 | 401 UNAUTHENTICATED |
+| DELETE指定虚构路径、不带凭证 | 401 UNAUTHENTICATED |
+| PATCH允许来源OPTIONS | 204，允许方法含PATCH、DELETE |
+| DELETE允许来源OPTIONS | 204，允许方法含PATCH、DELETE |
+| 禁止来源OPTIONS | 403 CORS_ORIGIN_DENIED，无ACAO |
+
+允许来源响应的ACAO均为既有静态站点精确Origin；预检方法完整值为GET, POST, PATCH, DELETE, OPTIONS。实际状态、关联ID及头部证据在本地忽略文件_logs/day22-public-route-check.json。可以确认新版单条路由、网关方法透传、身份拦截及预检已在公网生效；这些401不证明真实写库，更不能当作PATCH修改成功或DELETE后GET消失。
+
+2026-10-15该时点的下一步（历史计划）：仅发布已有dist前端，先将本地assets/index-CrpCdH68.js及assets/index-B0bzh8MB.css上传到静态站点assets目录，再将dist/index.html上传到站点根目录。新版首页检查台应出现“05 · 单条修改、删除与 GET 核对”。当时尚未取得上传或公网页面结果；真实带身份CRUD及SQL前后、确认交互和两截图仍待核对。其后公开文件校验与带身份结果见后续节。控制台上传依据[官方说明](https://docs.cloudbase.net/hosting/web-hosting-static)。
+
+
+### Day22跨日继续｜公网前端已核对，本地单条代理已补齐（2026-10-16）
+
+本轮继续既有Day22，不开始Day23。用户截图codex-clipboard-52687992-6687-482c-9ec7-d59eb67918cd.png可见“05 · 单条修改、删除与 GET 核对”，但没有地址栏；公网版本另以实际HTTP文件校验确认，不单凭截图推定。
+
+公开静态站点首页579字节、脚本index-CrpCdH68.js 329145字节、样式index-B0bzh8MB.css 41114字节均HTTP200，三个SHA256逐个与本地dist字节完全相同。首页引用正确的本次JS/CSS；前端发布验证通过。只读取公开文件，没有读取私人数据。证据在本地忽略文件_logs/day22-frontend-public-check-2026-10-16.json。
+
+截图中的UNAUTHENTICATED同时显示“HTTP：尚未取得响应”，对应客户端尚未准备有效凭证，不能记为服务器返回401或数据库故障。当前页刷新会清空内存凭证，需要用户用已有测试账号在本地恢复登录并核验，再通过既有按钮将短期凭证用于本人公网验收；不新增生产登录系统。
+
+另发现旧开发代理只匹配entries集合。用户明确选择“补齐本地单条路径（推荐）”，授权只修改vite.config.js一条规则。现行规则允许health根路径和entries集合/单个ID及可选query，拒绝多层子路径；现有target、Origin、认证代理与运行配置不变。实际配置12项路径检查通过，本地首页/health200、列表及单条PATCH/DELETE不带凭证401，共5项真实HTTP符合预期，未写库。完整npm test再次190通过、0失败。证据为_logs/day22-local-proxy-config-check-2026-10-16.json、day22-local-proxy-http-check-2026-10-16.json、day22-tests-2026-10-16.txt。
+
+2026-10-16代理修正完成时的历史停点：本地开发服务已启动，http://localhost:5173/可打开；本次只改开发代理，不重建或更换已发布的前端资源。Day22改动文件为14个，vite.config.js已补入上方清单；之前13个是当时尚未加入本次修正的历史计数。该时点尚未实际完成本轮登录/身份核验、真实带身份POST/PATCH/DELETE与GET/SELECT对比、删除确认交互及两张规定截图，未提交推送；后续取得的实际验收见下节。
+
+### Day22公网与数据库核心验收通过（2026-10-16）
+
+本节记录截至本次核对的最新验收状态，前文“未验证”等描述属于对应时点的历史状态。PATCH `/api/entries/:entryId` 和DELETE `/api/entries/:entryId` 已实现并部署；带身份的POST/GET/PATCH/DELETE、数据库前后对照及两张交付图均已取得，增删改查核心闭环通过。二次确认代码与本地取消零请求测试已通过，本轮真实弹窗确认过程未观察、真实取消未执行，单列为交互证据边界，不据此否定已完成的核心CRUD。提交与推送仍待用户确认14个Day22文件清单。
+
+本次虚构记录ID为 `entry-20fd4c79-2e75-4da6-9bff-0887d58aa6ea`，日期为 `2026-10-16`。用户页面截图显示PATCH200随后GET200核对同ID、日期、原文及版本，正文版本/记录版本从1/1变为2/2。修改保留原有虚构原文，仅在末尾追加“【虚构·Day22修改接口验证】这句仅通过修改接口追加。”。第一张交付图覆盖完整的修改前后值对比，原件保存在本地忽略文件 `_logs/day22-patch-before-after-2026-10-16.png`。
+
+PATCH的数据库前后验证由用户在同一CloudBase环境执行：修改前SELECT返回目标行且版本1/1；修改后返回同ID、日期及版本2/2，并进一步将text以 `COLLATE "C"` 与已确认的完整预期正文作精确等值比较，用户实际返回一行 `2 | 2 | true`（text_version、revision、text_matches）。这项精确比较确认修改后正文逐字一致；不依赖可能截断的表格正文复制。该PATCH核对过程中，代理未读取用户令牌或代为连接正式数据库。
+
+本次删除沿用上述目标ID，删除前记录版本为2。页面随后显示DELETE HTTP200、GET HTTP200，完整读取共1页8条，未再返回该目标ID；GET关联ID为 `e48a6983-8bac-4718-931a-d4f089d1dba4`。完整GET证据包含8条实际返回记录及末页 `hasMore=false`，未以第一页缺失冒充全量核对。JSON证据保存在本地忽略文件 `_logs/day22-delete-get-evidence-2026-10-16.json`。
+
+删除后，用户已在Codex侧边浏览器登录CloudBase。主代理在正确环境 `ritchie-d5gd1dg1yd29783e8` 的SQL编辑器新建空查询，保留旧UPDATE但未执行；实际只执行下列SELECT：
+
+```sql
+SELECT current_database() AS database_name, COUNT(*) AS matching_rows
+FROM public.entries
+WHERE id = 'entry-20fd4c79-2e75-4da6-9bff-0887d58aa6ea';
+```
+
+实际返回1行、耗时9ms：
+
+| database_name | matching_rows |
+| --- | --- |
+| postgres-gbu0fd7s | 0 |
+
+该正式数据库查询确认目标记录已不存在，不以页面提示替代数据库SELECT。第二张原始完整长截图已保存为本地忽略文件 `_logs/day22-delete-get-2026-10-16.jpg`，676611字节，SHA256为 `f8b252c6c3c372f2312e9fee4c874b0a7272d0103989c1e965067a71ccef7b91`；主代理已目视核对完整头尾，图中包含DELETE/GET200、目标ID、全部1页8条JSON及 `hasMore=false`。两张图均保留本地，不纳入Git提交。
+
+本次浏览器删除点击的 `Input.dispatchMouseEvent` 调用超时；随后未观察到dialog，页面已出现DELETE200结果。代理未调用accept或dismiss，也未观察到弹窗确认过程，不能推断由谁或如何完成确认，更不能把真实取消路径记为通过。二次确认代码已实现，本地测试验证取消时不发送DELETE；该本地证据不冒充本轮真实浏览器交互。正式多连接并发、真实跨用户等未实测场景仍按原边界保留，不追加软删除或额外功能。
+
+| 验收项 | 当前状态 | 实际证据 |
+| --- | --- | --- |
+| POST新增及GET读回 | 已通过 | 用户页面POST201随后GET200，相同ID、日期和原文 |
+| PATCH单条修改及GET读回 | 已通过 | 第一张交付图，PATCH200/GET200，版本1/1到2/2及正文差异 |
+| PATCH前后数据库SELECT | 已通过 | 用户提供的目标行1/1、修改后2/2及全文精确比较true |
+| DELETE后完整GET不再返回目标 | 已通过 | 公网DELETE200随后GET200，全部1页8条均无原目标；末页hasMore=false |
+| DELETE后正式数据库SELECT无目标行 | 已通过 | 正确环境内SELECT返回postgres-gbu0fd7s、matching_rows=0，9ms |
+| 两张交付图 | 已取得 | PATCH前后对比PNG及DELETE/完整GET长截图JPG，均在本地忽略目录 |
+| 增删改查核心闭环 | 已通过 | 同一虚构目标的POST/GET/PATCH/DELETE及SELECT前后证据形成闭环 |
+| 删除二次确认与取消保护 | 代码及本地测试通过；真实交互未验证 | 本地取消零DELETE请求；本轮弹窗确认过程未观察，真实取消未执行 |
+| 提交与推送 | 待用户确认文件清单 | 14个候选文件均属Day22，尚未暂存或提交，确认后再提交推送 |
+
+本轮仅更新文档验收状态，不改业务代码、迁移或已发布资源；未暂存、提交或推送。完整当日人工确认、正文原文、页面与数据库核对、截图及交互证据边界在本地忽略日志 `_logs/2026-10-16.md`。
