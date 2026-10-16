@@ -17,7 +17,6 @@ let writeMode;
 let pendingRead;
 let mutationMode;
 let pendingMutation;
-let confirmations;
 const originalGlobals = new Map();
 const fictionalToken = 'fictional-day20-token';
 
@@ -120,6 +119,10 @@ before(async () => {
   setGlobal('fetch', mockedFetch);
   setGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   dom.window.HTMLElement.prototype.scrollIntoView = function () {};
+  // JSDOM 只补弹窗开关；确认和取消仍由真实 DOM 事件驱动。
+  const dialog = dom.window.HTMLDialogElement.prototype;
+  if (!dialog.showModal) dialog.showModal = function () { this.open = true; };
+  if (!dialog.close) dialog.close = function () { this.open = false; };
   ({ createRoot } = await import('react-dom/client'));
   server = await createServer({
     configFile: false, plugins: [react()],
@@ -137,8 +140,6 @@ beforeEach(async () => {
   pendingRead = null;
   mutationMode = 'success';
   pendingMutation = null;
-  confirmations = [];
-  window.confirm = message => { confirmations.push(message); return true; };
   window.history.replaceState(null, '', '#/');
   root = createRoot(document.getElementById('root'));
   await act(async () => root.render(React.createElement(HomePage)));
@@ -168,8 +169,8 @@ async function settleUntil(check, label) {
   assert.fail(`等待超时：${label}`);
 }
 
-function button(label) {
-  const found = [...document.querySelectorAll('button')].find((item) => item.textContent.trim() === label);
+function button(label, scope = document) {
+  const found = [...scope.querySelectorAll('button')].find((item) => item.textContent.trim() === label);
   assert.ok(found, `找到按钮：${label}`);
   return found;
 }
@@ -295,6 +296,20 @@ test('POST201但GET正文不一致时不记成功，仅重新读回且草稿完�
 
 
 function mutations(method) { return sent.filter(request => request.method === method); }
+function deleteDialog() { return document.querySelector('dialog[aria-labelledby="cloud-delete-confirm-title"]'); }
+async function openDeleteConfirmation() {
+  const deleteCount = mutations('DELETE').length;
+  await click(button('删除这条云端记录'));
+  await settleUntil(() => deleteDialog()?.open, '页内删除确认弹窗已打开');
+  const dialog = deleteDialog();
+  assert.equal(dialog.querySelector('#cloud-delete-confirm-title').textContent.trim(), '确认删除这条云端记录？');
+  assert.equal(mutations('DELETE').length, deleteCount, '打开二次确认不能发送 DELETE');
+  return dialog;
+}
+async function confirmDelete() {
+  const dialog = await openDeleteConfirmation();
+  await click(button('确认永久删除', dialog));
+}
 async function selectFirstEntry() {
   await prepareCredential();
   await settleUntil(() => document.querySelector('.home-cloud-entry-list'), '读取可编辑的虚构记录');
@@ -322,16 +337,17 @@ test('Day22 虚构闭环：PATCH 保留原文对比，DELETE 取消零请求，�
   assert.ok(evidence.textContent.includes(before.text));
   assert.ok(evidence.textContent.includes(draft));
   assert.ok(evidence.textContent.includes('已经实际 GET 核对'));
-  window.confirm = message => { confirmations.push(message); return false; };
-  await click(button('删除这条云端记录'));
+  const dialog = await openDeleteConfirmation();
+  assert.ok(dialog.textContent.includes(before.id));
+  assert.ok(dialog.textContent.includes(before.entryDate));
+  assert.ok(dialog.textContent.includes(draft));
+  assert.equal(document.activeElement, button('取消删除', dialog), '删除确认默认聚焦取消');
+  await click(button('取消删除', dialog));
+  assert.ok(!deleteDialog()?.open, '取消后关闭弹窗');
   assert.equal(mutations('DELETE').length, 0, '取消后完全没有 DELETE 请求');
   assert.equal(rows.length, 1);
-  assert.ok(confirmations[0].includes(before.id));
-  assert.ok(confirmations[0].includes(before.entryDate));
-  assert.ok(confirmations[0].includes(draft));
-  assert.ok(document.body.textContent.includes('已取消删除'));
-  window.confirm = message => { confirmations.push(message); return true; };
-  await click(button('删除这条云端记录'));
+  assert.ok(document.body.textContent.includes('已取消删除，没有发送 DELETE 请求。'));
+  await confirmDelete();
   await settleUntil(() => document.body.textContent.includes('删除已核对：DELETE 200'), '确认删除并 GET 全部分页核对');
   assert.equal(mutations('DELETE').length, 1);
   assert.equal(rows.length, 0);
@@ -380,7 +396,7 @@ test('Day22 DELETE 遍历全部页，目标藏在第二页不能误报已经删�
   rows = [...Array.from({ length: 20 }, (_, i) => ({ ...fictionalEntry(), id: 'day22-fictional-page-' + i })), target];
   readMode = 'paged';
   mutationMode = 'delete-noop';
-  await click(button('删除这条云端记录'));
+  await confirmDelete();
   await settleUntil(() => document.body.textContent.includes('GET 全部分页仍返回目标 ID'), '第二页中发现目标');
   assert.ok(sent.some(request => request.method === 'GET' && request.url.includes('cursor=20')), '实际请求第二页');
   assert.equal(document.querySelector('[data-testid="delete-evidence"]'), null);
@@ -399,6 +415,9 @@ test('Day22 慢 PATCH 防止连点，清除凭证作废迟到写响应和私人�
   await settleUntil(() => pendingMutation, '慢 PATCH 已发送');
   assert.equal(button('保存修改并读回核对').disabled, true);
   assert.equal(button('删除这条云端记录').disabled, true);
+  await act(async () => button('删除这条云端记录').click());
+  assert.ok(!deleteDialog()?.open, '慢 PATCH 期间禁用删除入口，不能打开确认');
+  assert.equal(mutations('DELETE').length, 0, '慢 PATCH 期间没有 DELETE 请求');
   await act(async () => button('保存修改并读回核对').click());
   assert.equal(mutations('PATCH').length, 1);
   await click(button('清除凭证与私人数据'));
@@ -415,13 +434,13 @@ test('Day22 慢 PATCH 防止连点，清除凭证作废迟到写响应和私人�
 test('Day22 DELETE 的 409/404 保留选中原文并显示中文错误，未删除也未标成功', async () => {
   await selectFirstEntry();
   mutationMode = 'conflict';
-  await click(button('删除这条云端记录'));
+  await confirmDelete();
   await settleUntil(() => document.body.textContent.includes('版本或数据冲突（409）'), '删除冲突提示');
   assert.equal(rows.length, 1);
   assert.equal(document.getElementById('cloud-edit-text').value, rows[0].text);
   assert.equal(mutations('DELETE').length, 1);
   mutationMode = 'missing';
-  await click(button('删除这条云端记录'));
+  await confirmDelete();
   await settleUntil(() => document.body.textContent.includes('找不到这条记录。'), '删除不存在中文提示');
   assert.equal(mutations('DELETE').length, 2);
   assert.equal(document.querySelector('[data-testid="delete-evidence"]'), null);
@@ -431,7 +450,7 @@ test('Day22 删除成功后确实读完多页，末页与 total 一致才给出�
   await selectFirstEntry();
   rows = [...rows, ...Array.from({ length: 25 }, (_, i) => ({ ...fictionalEntry(), id: 'day22-fictional-remaining-' + i }))];
   readMode = 'paged';
-  await click(button('删除这条云端记录'));
+  await confirmDelete();
   await settleUntil(() => document.body.textContent.includes('删除已核对：DELETE 200'), '多页全部核对');
   const evidence = document.querySelector('[data-testid="delete-evidence"]');
   assert.ok(evidence.textContent.includes('已核对全部 2 页'));
@@ -439,4 +458,119 @@ test('Day22 删除成功后确实读完多页，末页与 total 一致才给出�
   assert.ok(sent.some(request => request.method === 'GET' && request.url.includes('cursor=20')));
   assert.equal(rows.length, 25);
   assert.equal(mutations('DELETE').length, 1);
+});
+test('Day22 删除确认 Escape 取消保留目标和草稿，不发送 DELETE', async () => {
+  await selectFirstEntry();
+  const before = structuredClone(rows[0]);
+  const draft = '【虚构·Day22】尚未保存的修改草稿。';
+  await changeEditText(draft);
+  const dialog = await openDeleteConfirmation();
+  const staleConfirm = button('确认永久删除', dialog);
+  // 浏览器按 Escape 会派发 cancel；JSDOM 在这里直接派发同一事件。
+  await act(async () => dialog.dispatchEvent(new dom.window.Event('cancel', { cancelable: true })));
+  assert.ok(!deleteDialog()?.open, 'Escape 关闭确认弹窗');
+  assert.ok(document.body.textContent.includes('已取消删除，没有发送 DELETE 请求。'));
+  assert.equal(document.getElementById('cloud-edit-text').value, draft);
+  assert.deepEqual(rows, [before]);
+  await act(async () => staleConfirm.click());
+  assert.equal(mutations('DELETE').length, 0, 'Escape 后陈旧确认不能删除');
+});
+
+test('Day22 切换目标或刷新会作废旧删除确认，必须重新核对当前目标', async () => {
+  const second = { ...fictionalEntry(), id: 'day22-fictional-second', text: '【虚构】第二条独立验证原文。', revision: 4 };
+  rows.push(second);
+  await selectFirstEntry();
+  const firstDialog = await openDeleteConfirmation();
+  const firstConfirm = button('确认永久删除', firstDialog);
+  const selectors = [...document.querySelectorAll('button')]
+    .filter(item => item.textContent.trim() === '选择此记录进行修改或删除');
+  assert.equal(selectors.length, 2);
+  // 在同一事件轮次调用旧按钮，验证同步防护而不只依赖重新渲染。
+  await act(async () => { selectors[1].click(); firstConfirm.click(); });
+  assert.ok(!deleteDialog()?.open, '切换记录立即关闭旧确认');
+  assert.equal(mutations('DELETE').length, 0);
+  assert.equal(document.getElementById('cloud-edit-text').value, second.text);
+
+  const secondDialog = await openDeleteConfirmation();
+  assert.ok(secondDialog.textContent.includes(second.id));
+  assert.ok(secondDialog.textContent.includes(second.text));
+  assert.ok(!secondDialog.textContent.includes(rows[0].id), '重新打开只展示当前目标');
+  const secondConfirm = button('确认永久删除', secondDialog);
+  readMode = 'pending';
+  await act(async () => { button('刷新状态与云端记录').click(); secondConfirm.click(); });
+  await settleUntil(() => pendingRead, '刷新触发慢读取');
+  assert.ok(!deleteDialog()?.open, '刷新期间关闭待确认');
+  assert.equal(mutations('DELETE').length, 0, '旧确认不能在读取期间删除');
+  rows = rows.map(entry => entry.id === second.id ? { ...entry, revision: 5 } : entry);
+  readMode = 'success';
+  await act(async () => pendingRead());
+  await settleUntil(() => document.querySelector('.home-cloud-entry-list'), '刷新读回完成');
+  await act(async () => secondConfirm.click());
+  assert.equal(mutations('DELETE').length, 0, '刷新结束也不能重新激活旧确认');
+  assert.equal(rows.length, 2);
+});
+
+test('Day22 清凭证和离开页面都清除删除确认预览，旧按钮不能发请求', async () => {
+  for (const action of ['clear', 'pagehide']) {
+    await selectFirstEntry();
+    const before = structuredClone(rows[0]);
+    const dialog = await openDeleteConfirmation();
+    const staleConfirm = button('确认永久删除', dialog);
+    await act(async () => {
+      if (action === 'clear') button('清除凭证与私人数据').click();
+      else window.dispatchEvent(new dom.window.Event('pagehide'));
+      staleConfirm.click();
+    });
+    assert.ok(!deleteDialog()?.open, '会话清理关闭弹窗');
+    assert.ok(!deleteDialog()?.textContent.includes(before.text), '关闭后不保留私人原文预览');
+    assert.ok(!deleteDialog()?.textContent.includes(before.id), '关闭后不保留私人目标 ID');
+    assert.equal(document.getElementById('cloud-edit-text'), null);
+    assert.equal(privateOriginal(), null);
+    assert.equal(mutations('DELETE').length, 0, '会话清理后旧确认没有 DELETE 请求');
+    assert.deepEqual(rows, [before]);
+  }
+});
+
+test('Day22 其他写入及只读核对都会关闭待确认，不把陈旧确认当授权', async () => {
+  await selectFirstEntry();
+  let dialog = await openDeleteConfirmation();
+  let staleConfirm = button('确认永久删除', dialog);
+  await act(async () => { button('写入虚构记录并读回核对').click(); staleConfirm.click(); });
+  await settleUntil(() => document.body.textContent.includes('写入验证通过：POST 201'), '虚构新建及读回完成');
+  assert.ok(!deleteDialog()?.open, '新建写入关闭旧确认');
+  assert.equal(mutations('DELETE').length, 0);
+
+  dialog = await openDeleteConfirmation();
+  staleConfirm = button('确认永久删除', dialog);
+  await act(async () => { button('只读核对这次写入').click(); staleConfirm.click(); });
+  await settleUntil(() => document.body.textContent.includes('写入验证通过：POST 201'), '只读核对完成');
+  assert.ok(!deleteDialog()?.open, '只读核对关闭旧确认');
+  assert.equal(mutations('DELETE').length, 0);
+  assert.equal(posts().length, 1);
+  assert.equal(rows.length, 2);
+});
+
+test('Day22 慢 DELETE 只发送一次，清凭证后迟到响应不能恢复私人证据', async () => {
+  await selectFirstEntry();
+  const dialog = await openDeleteConfirmation();
+  const confirm = button('确认永久删除', dialog);
+  mutationMode = 'pending';
+  await act(async () => { confirm.click(); confirm.click(); });
+  await settleUntil(() => pendingMutation, '慢 DELETE 已发送');
+  assert.equal(mutations('DELETE').length, 1, '连续确认只发送一次 DELETE');
+  assert.ok(!deleteDialog()?.open, '请求发出后确认弹窗立即关闭');
+  assert.equal(button('删除这条云端记录').disabled, true);
+  await act(async () => { confirm.click(); button('删除这条云端记录').click(); });
+  assert.equal(mutations('DELETE').length, 1, '慢请求期间不能重复删除');
+
+  await click(button('清除凭证与私人数据'));
+  await act(async () => pendingMutation());
+  assert.equal(mutations('DELETE').length, 1);
+  assert.ok(!deleteDialog()?.open);
+  assert.equal(privateOriginal(), null);
+  assert.equal(document.getElementById('cloud-edit-text'), null);
+  assert.equal(document.querySelector('[data-testid="delete-evidence"]'), null);
+  assert.ok(!document.body.textContent.includes('删除已核对：DELETE 200'));
+  assert.ok(document.body.textContent.includes('本页未保存凭证'));
+  // 已发出的请求可能已在服务端删除；这里只保证迟到响应不恢复私人界面。
 });

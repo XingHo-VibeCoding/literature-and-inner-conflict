@@ -56,6 +56,10 @@ export default function HomePage() {
   const loginController = useRef(null);
   const loginBusyRef = useRef(false);
   const copyBusyRef = useRef(false);
+  const deleteDialog = useRef(null);
+  const deleteTrigger = useRef(null);
+  const cancelDeleteButton = useRef(null);
+  const deleteConfirmationRef = useRef(null);
   const [copyState, setCopyState] = useState({ status: 'idle', message: '' });
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -77,6 +81,19 @@ export default function HomePage() {
   const [mutationReceipt, setMutationReceipt] = useState(null);
   const [patchEvidence, setPatchEvidence] = useState(null);
   const [deleteEvidence, setDeleteEvidence] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null);
+
+  useEffect(() => {
+    const dialog = deleteDialog.current;
+    if (!dialog) return;
+    if (deleteConfirmation) {
+      if (!dialog.open) dialog.showModal();
+      cancelDeleteButton.current?.focus();
+    } else if (dialog.open) {
+      dialog.close();
+      deleteTrigger.current?.focus();
+    }
+  }, [deleteConfirmation]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -145,7 +162,14 @@ export default function HomePage() {
     }
   }
 
+  function clearDeleteConfirmation() {
+    // 同步作废旧按钮持有的确认，避免取消或切换会话后的迟到操作误删。
+    deleteConfirmationRef.current = null;
+    setDeleteConfirmation(null);
+  }
+
   function refreshEntries() {
+    clearDeleteConfirmation();
     setReadRequest((current) => ({ cursor: undefined, append: false, revision: current.revision + 1 }));
   }
 
@@ -155,6 +179,7 @@ export default function HomePage() {
   }
 
   function resetMutations() {
+    clearDeleteConfirmation();
     setSelectedEntry(null);
     setEditDate('');
     setEditText('');
@@ -295,6 +320,7 @@ export default function HomePage() {
   async function writeTest(event) {
     event.preventDefault();
     if (writingRef.current || loginBusyRef.current || !apiSetup.client || !tokenRef.current) return;
+    clearDeleteConfirmation();
     if (!testText.trim()) {
       setWriteState({ status: 'error', message: '测试原文不能为空；草稿已保留。', httpStatus: null, requestId: null });
       return;
@@ -330,6 +356,7 @@ export default function HomePage() {
 
   async function verifyWriteAgain() {
     if (writingRef.current || loginBusyRef.current || !writeReceipt || !apiSetup.client || !tokenRef.current) return;
+    clearDeleteConfirmation();
     writingRef.current = true;
     const controller = new AbortController();
     writeController.current = controller;
@@ -346,6 +373,7 @@ export default function HomePage() {
 
   function selectEntry(entry) {
     if (writingRef.current || loginBusyRef.current) return;
+    clearDeleteConfirmation();
     setSelectedEntry(entry);
     setEditDate(entry.entryDate);
     setEditText(entry.text);
@@ -404,16 +432,31 @@ export default function HomePage() {
     setMutationReceipt(null);
   }
 
-  async function mutateEntry(operation, event) {
+  function requestDelete() {
+    if (writingRef.current || loginBusyRef.current || reading || !selectedEntry || !apiSetup.client
+      || !tokenRef.current || mutationReceipt || deleteConfirmationRef.current) return;
+    const confirmation = { entry: selectedEntry, session: sessionVersion.current };
+    deleteConfirmationRef.current = confirmation;
+    setDeleteConfirmation(confirmation);
+    setMutationState({ status: 'idle', message: '' });
+  }
+
+  function cancelDelete() {
+    if (!deleteConfirmationRef.current) return;
+    clearDeleteConfirmation();
+    setMutationState({ status: 'cancelled', message: '已取消删除，没有发送 DELETE 请求。' });
+  }
+
+  async function mutateEntry(operation, event, confirmedTarget) {
     event?.preventDefault();
-    if (writingRef.current || loginBusyRef.current || !selectedEntry || !apiSetup.client || !tokenRef.current || mutationReceipt) return;
-    if (operation === 'DELETE') {
-      const preview = Array.from(selectedEntry.text).slice(0, 160).join('');
-      if (!window.confirm(`确认删除这条云端记录？\n日期：${selectedEntry.entryDate}\n原文预览：${preview}\n记录 ID：${selectedEntry.id}\n这是永久删除，记录及其关联收藏将被清理；阅读感悟原文保留。`)) {
-        setMutationState({ status: 'cancelled', message: '已取消删除，没有发送 DELETE 请求。' });
-        return;
-      }
+    if (writingRef.current || loginBusyRef.current || reading || !selectedEntry || !apiSetup.client || !tokenRef.current || mutationReceipt) return;
+    if (operation === 'DELETE' && (!confirmedTarget || deleteConfirmationRef.current !== confirmedTarget
+      || confirmedTarget.session !== sessionVersion.current || confirmedTarget.entry.id !== selectedEntry.id
+      || confirmedTarget.entry.revision !== selectedEntry.revision)) {
+      clearDeleteConfirmation();
+      return;
     }
+    clearDeleteConfirmation();
     writingRef.current = true;
     readController.current?.abort();
     const controller = new AbortController();
@@ -448,6 +491,7 @@ export default function HomePage() {
 
   async function verifyMutationAgain() {
     if (writingRef.current || loginBusyRef.current || !mutationReceipt || !apiSetup.client || !tokenRef.current) return;
+    clearDeleteConfirmation();
     writingRef.current = true;
     readController.current?.abort();
     const controller = new AbortController();
@@ -663,13 +707,13 @@ export default function HomePage() {
             <p className="home-cloud-small">选中 ID：{selectedEntry.id} · 预期记录版本：{selectedEntry.revision}</p>
             <form onSubmit={(event) => mutateEntry('PATCH', event)}>
               <label htmlFor="cloud-edit-date">记录日期</label>
-              <input id="cloud-edit-date" type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} disabled={writeBusy || loginBusy || Boolean(mutationReceipt)} required />
+              <input id="cloud-edit-date" type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} disabled={writeBusy || loginBusy || Boolean(mutationReceipt) || Boolean(deleteConfirmation)} required />
               <label htmlFor="cloud-edit-text">用户原文 · 修改草稿</label>
-              <textarea id="cloud-edit-text" value={editText} onChange={(event) => setEditText(event.target.value)} disabled={writeBusy || loginBusy || Boolean(mutationReceipt)} rows={4} aria-describedby="cloud-edit-help" required />
+              <textarea id="cloud-edit-text" value={editText} onChange={(event) => setEditText(event.target.value)} disabled={writeBusy || loginBusy || Boolean(mutationReceipt) || Boolean(deleteConfirmation)} rows={4} aria-describedby="cloud-edit-help" required />
               <p id="cloud-edit-help" className="home-cloud-small">保留原始空格与换行，失败时保留草稿。保存后会请求 GET 逐页核对；版本冲突时请先刷新，再核对并重新选择。</p>
               <div className="home-cloud-actions">
-                <button type="submit" disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt)}>保存修改并读回核对</button>
-                <button type="button" onClick={() => mutateEntry('DELETE')} disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt)}>删除这条云端记录</button>
+                <button type="submit" disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt) || Boolean(deleteConfirmation)}>保存修改并读回核对</button>
+                <button ref={deleteTrigger} type="button" onClick={requestDelete} disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt) || Boolean(deleteConfirmation)}>删除这条云端记录</button>
               </div>
             </form>
           </> : <p className="home-cloud-small">尚未选择记录。请在“查看已读记录的原文、日期与版本”中选择。</p>}
@@ -709,6 +753,20 @@ export default function HomePage() {
         </div>
         <span className="home-letter-source">本站原创寄语</span>
       </aside>
+
+      <dialog ref={deleteDialog} aria-labelledby="cloud-delete-confirm-title" aria-describedby="cloud-delete-warning" onCancel={cancelDelete}>
+        {deleteConfirmation && <>
+          <h2 id="cloud-delete-confirm-title">确认删除这条云端记录？</h2>
+          <p>日期：{deleteConfirmation.entry.entryDate} · 记录版本：{deleteConfirmation.entry.revision}</p>
+          <p className="delete-preview">记录 ID：{deleteConfirmation.entry.id}</p>
+          <p className="delete-preview">原文预览：{Array.from(deleteConfirmation.entry.text).slice(0, 160).join('')}</p>
+          <p id="cloud-delete-warning">这是永久删除，记录及其关联收藏将被清理；阅读感悟原文保留。</p>
+          <div className="dialog-actions">
+            <button ref={cancelDeleteButton} type="button" autoFocus onClick={cancelDelete}>取消删除</button>
+            <button type="button" className="danger-button" onClick={() => mutateEntry('DELETE', undefined, deleteConfirmation)} disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt)}>确认永久删除</button>
+          </div>
+        </>}
+      </dialog>
 
       <p className="home-storage-note">首页近况和检查台读取云端数据；两个入口内的日精进、感悟、收藏与固定演示仍沿用原有本地流程。未自动导入本机记录。</p>
     </div>
