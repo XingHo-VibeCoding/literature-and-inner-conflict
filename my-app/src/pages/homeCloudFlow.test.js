@@ -56,6 +56,12 @@ async function mockedFetch(url, options) {
   }
   assert.equal(options.headers.Authorization, `Bearer ${fictionalToken}`);
   if (options.method === 'PATCH' || options.method === 'DELETE') {
+    if (mutationMode === 'network-error') throw new Error('【虚构内部详情】TypeError: fetch failed at private-path');
+    if (mutationMode === 'server-error' || mutationMode === 'invalid-input') return reply(mutationMode === 'server-error' ? 503 : 400, {
+      ok: false, data: null, error: { code: mutationMode === 'server-error' ? 'WRITE_FAILED' : 'INVALID_INPUT',
+        message: '【虚构内部详情】SQL failed at private-path', retryable: false,
+        fields: { text: '【虚构内部详情】invalid column text', '【虚构内部详情】unknown field': 'private-path' } },
+    });
     if (mutationMode === 'conflict' || mutationMode === 'missing') return reply(mutationMode === 'conflict' ? 409 : 404, {
       ok: false, data: null, error: { code: mutationMode === 'conflict' ? 'VERSION_CONFLICT' : 'ENTRY_NOT_FOUND',
         message: mutationMode === 'conflict' ? '记录已变化，请重新读取。' : '找不到这条记录。', retryable: false },
@@ -248,7 +254,7 @@ test('虚构首页完整流程：原文保留、刷新跟随、409保草稿、20
 test('身份401及网络失败明确报错，不能被显示成数据库空列表', async () => {
   readMode = 'unauthorized';
   await prepareCredential();
-  await settleUntil(() => document.body.textContent.includes('虚构凭证已过期。'), '401错误');
+  await settleUntil(() => document.body.textContent.includes('登录凭证无效或已过期，请重新登录。'), '401错误');
   assert.ok(document.body.textContent.includes('先准备云端读取凭证'));
   assert.ok(document.body.textContent.includes('HTTP：401'));
   assert.equal(privateOriginal(), null);
@@ -370,10 +376,34 @@ test('Day22 修改 409/404 均保留草稿与中文错误，不能自动重试�
   assert.equal(mutations('PATCH').length, 1);
   mutationMode = 'missing';
   await click(button('保存修改并读回核对'));
-  await settleUntil(() => document.body.textContent.includes('找不到这条记录。'), '不存在中文错误可见');
+  await settleUntil(() => document.body.textContent.includes('记录不存在或不属于当前用户。'), '不存在中文错误可见');
   assert.equal(document.getElementById('cloud-edit-text').value, draft);
   assert.equal(mutations('PATCH').length, 2);
   assert.equal(document.querySelector('[data-testid="patch-evidence"]'), null);
+});
+
+test('Day23 三类错误均显示中文并保留草稿，服务端原始异常和字段不进入页面', async () => {
+  await selectFirstEntry();
+  const before = structuredClone(rows[0]);
+  const draft = '  【虚构·Day23】错误出现时仍要保留的原文。\n第二行不丢失。  ';
+  await changeEditText(draft);
+  for (const [mode, message] of [
+    ['network-error', '网络请求失败，请核对网络连接与跨域配置后再手动重试。'],
+    ['server-error', '服务暂时不可用，请稍后重试。'],
+    ['invalid-input', '请检查必填字段和输入内容。'],
+  ]) {
+    mutationMode = mode;
+    const beforeCount = mutations('PATCH').length;
+    await click(button('保存修改并读回核对'));
+    await settleUntil(() => document.body.textContent.includes(message), mode + '中文提示可见');
+    assert.equal(document.getElementById('cloud-edit-text').value, draft, '三类失败均保留原始空格和换行');
+    assert.equal(mutations('PATCH').length, beforeCount + 1, '仅发送本次人工触发的请求');
+    assert.deepEqual(rows, [before], '失败未改变原记录');
+    assert.equal(document.querySelector('[data-testid="patch-evidence"]'), null);
+    assert.ok(!document.body.textContent.includes('【虚构内部详情】'));
+    assert.ok(!document.body.textContent.includes('private-path'));
+  }
+  assert.ok(document.body.textContent.includes('请填写 1 至 5000 个有效字符的原文'));
 });
 
 test('Day22 PATCH200 但 GET 不一致只记尚未核对，手动只读核对不重复 PATCH', async () => {
@@ -441,7 +471,7 @@ test('Day22 DELETE 的 409/404 保留选中原文并显示中文错误，未删�
   assert.equal(mutations('DELETE').length, 1);
   mutationMode = 'missing';
   await confirmDelete();
-  await settleUntil(() => document.body.textContent.includes('找不到这条记录。'), '删除不存在中文提示');
+  await settleUntil(() => document.body.textContent.includes('记录不存在或不属于当前用户。'), '删除不存在中文提示');
   assert.equal(mutations('DELETE').length, 2);
   assert.equal(document.querySelector('[data-testid="delete-evidence"]'), null);
 });

@@ -328,7 +328,9 @@ test('HTTP重复POST返回409并保留一行，缺字段返回400中文fields且
     const missing = await post(base, { entryDate: '2026-10-14' });
     assert.equal(missing.response.status, 400);
     assert.equal(missing.body.error.code, 'INVALID_INPUT');
-    assert.match(missing.body.error.fields.text, /[\u4e00-\u9fff]/);
+    assert.equal(missing.body.error.message, '请检查必填字段和输入内容。');
+    assert.equal(missing.body.error.fields.text, '请填写原文。');
+    assert.equal(missing.body.error.retryable, false);
     assert.equal(db.records.size, 1);
     assert.equal(db.calls.length, 2);
   });
@@ -450,13 +452,39 @@ test('HTTP写入失败返回WRITE_FAILED，错误响应与日志不含内部错�
     assert.equal(result.response.status, 500);
     assert.equal(result.body.ok, false);
     assert.equal(result.body.data, null);
-    assert.equal(result.body.error.code, 'WRITE_FAILED');
-    assert.equal(logs.length, 1);
+    assert.deepEqual(result.body.error, {
+      code: 'WRITE_FAILED', message: '服务暂时不可用，请稍后重试。', retryable: true,
+    });
+    assert.deepEqual(logs, [{ requestId: result.response.headers.get('x-request-id'), code: 'WRITE_FAILED' }]);
     for (const value of [internal, validBody().text, owner, token, apiKey]) {
       assert.equal(JSON.stringify(result.body).includes(value), false);
       assert.equal(JSON.stringify(logs).includes(value), false);
     }
   }, { write: async () => { throw new Error(internal); } });
+});
+
+test('Day23 写入已知5xx隐藏消息与fields，保留错误码、状态和安全日志', async () => {
+  const internal = '【虚构·Day23】不得返回客户端的写入内部详情。';
+  for (const [status, retryable] of [[500, false], [503, true]]) {
+    const failure = new ApiError(status, 'WRITE_FAILED', internal, retryable);
+    failure.fields = { text: validBody().text, credential: apiKey };
+    await localServer(async (base, db, logs) => {
+      const result = await post(base);
+      assert.equal(result.response.status, status);
+      assert.deepEqual(result.body, {
+        ok: false, data: null,
+        error: { code: 'WRITE_FAILED', message: '服务暂时不可用，请稍后重试。', retryable },
+      });
+      assert.match(result.response.headers.get('x-request-id'), /^[0-9a-f-]{36}$/);
+      assert.deepEqual(logs, [{ requestId: result.response.headers.get('x-request-id'), code: 'WRITE_FAILED' }]);
+      assert.equal(db.calls.length, 0);
+      assert.equal(db.records.size, 0);
+      for (const value of [internal, validBody().text, owner, token, apiKey]) {
+        assert.equal(JSON.stringify(result.body).includes(value), false);
+        assert.equal(JSON.stringify(logs).includes(value), false);
+      }
+    }, { write: async () => { throw failure; } });
+  }
 });
 
 test('HTTPS只有固定INSERT用写角色，既有SELECT继续只读，SQL参数和后台凭证分开传递', async () => {

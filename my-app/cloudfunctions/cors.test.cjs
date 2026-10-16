@@ -229,7 +229,7 @@ test('允许域名的数据库错误和不存在路径带 ACAO，维持原封套
     assert.equal(response.status, 500);
     assertCors(response);
     assert.deepEqual(await response.json(), {
-      ok: false, data: null, error: { code: 'INTERNAL_ERROR', message: '读取失败，请稍后重试。', retryable: true },
+      ok: false, data: null, error: { code: 'INTERNAL_ERROR', message: '服务暂时不可用，请稍后重试。', retryable: true },
     });
     const missing = await fetch(base + '/api/missing', { headers: { Origin: origin } });
     assert.equal(missing.status, 404);

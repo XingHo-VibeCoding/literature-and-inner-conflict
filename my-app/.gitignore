@@ -12,3 +12,15 @@ cloudfunctions/health.zip
 # Day 17 云函数上传包和部署依赖只保存在本地。
 cloudfunctions/reads.zip
 cloudfunctions/reads/node_modules/
+
+# Day23：示例只含公开占位地址和空值，允许提交；真实配置仍被忽略。
+!.env.example
+
+# 私钥、证书包和本机凭证目录不进入版本库。
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+*.log

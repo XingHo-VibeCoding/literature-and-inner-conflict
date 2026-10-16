@@ -251,10 +251,38 @@ test('HTTP读库失败不返回空列表，也不泄露内部错误正文', asyn
     const body = await response.json();
     assert.equal(response.status, 500);
     assert.equal(body.data, null);
-    assert.equal(body.error.code, 'INTERNAL_ERROR');
+    assert.deepEqual(body.error, {
+      code: 'INTERNAL_ERROR', message: '服务暂时不可用，请稍后重试。', retryable: true,
+    });
+    assert.deepEqual(logs, [{ requestId: response.headers.get('x-request-id'), code: 'INTERNAL_ERROR' }]);
     assert.equal(JSON.stringify(body).includes(fictionalError), false);
     assert.equal(JSON.stringify(logs).includes(fictionalError), false);
   }, { read: async () => { throw new Error(fictionalError); } });
+});
+
+test('Day23 已知5xx只返回固定中文，不透传原始消息和fields，保留状态与请求号', async () => {
+  const internal = '【虚构·Day23】仅供服务端诊断的读取详情。';
+  const privateField = '【虚构·Day23】不得返回客户端的字段内容。';
+  for (const [status, retryable] of [[500, false], [503, true]]) {
+    const failure = new ApiError(status, 'INTERNAL_ERROR', internal, retryable);
+    failure.fields = { text: privateField };
+    await localServer(async (base, db, logs) => {
+      const response = await fetch(`${base}/api/entries`, { headers: authorized });
+      const body = await response.json();
+      assert.equal(response.status, status);
+      assert.deepEqual(body, {
+        ok: false, data: null,
+        error: { code: 'INTERNAL_ERROR', message: '服务暂时不可用，请稍后重试。', retryable },
+      });
+      assert.match(response.headers.get('x-request-id'), /^[0-9a-f-]{36}$/);
+      assert.deepEqual(logs, [{ requestId: response.headers.get('x-request-id'), code: 'INTERNAL_ERROR' }]);
+      assert.equal(db.calls.length, 0);
+      for (const value of [internal, privateField]) {
+        assert.equal(JSON.stringify(body).includes(value), false);
+        assert.equal(JSON.stringify(logs).includes(value), false);
+      }
+    }, { read: async () => { throw failure; } });
+  }
 });
 
 test('每次HTTP请求重新查询，上游虚构结果改变后返回跟随改变', async () => {
@@ -495,7 +523,7 @@ test('未知、嵌套、非对象及非JSON错误代码不会直接反射到诊�
   });
 });
 
-test('HTTP安全诊断保持三键和既有错误字段，日志也不含供应商内部内容', async () => {
+test('Day23 HTTP隐藏SQL诊断并保留三键、错误码、重试标记与安全日志', async () => {
   const query = createCloudBaseQuery('day17-test-env', fictionalAdminKey,
     async () => upstream(400, { code: 'DATABASE_42704',
       message: fictionalAdminKey, details: ENTRIES_SQL + owner }));
@@ -510,7 +538,7 @@ test('HTTP安全诊断保持三键和既有错误字段，日志也不含供应�
     assert.equal(body.data, null);
     assert.equal(body.error.code, 'INTERNAL_ERROR');
     assert.equal(body.error.retryable, false);
-    assert.match(body.error.message, /SQL 服务 HTTP 400.*DATABASE_42704/);
+    assert.equal(body.error.message, '服务暂时不可用，请稍后重试。');
     for (const value of [fictionalAdminKey, ENTRIES_SQL, owner]) {
       assert.equal(JSON.stringify(body).includes(value), false);
       assert.equal(JSON.stringify(logs).includes(value), false);

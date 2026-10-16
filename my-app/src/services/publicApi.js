@@ -1,6 +1,62 @@
 const HEALTH_SERVICE = '【literature-and-inner-conflict】';
 const ENTRY_KEYS = ['id', 'entryDate', 'text', 'textVersion', 'revision', 'createdAt', 'updatedAt', 'adoptedAnalysis', 'origin'];
 const REQUEST_TIMEOUT_MS = 30000;
+const SERVER_ERROR_MESSAGE = '服务暂时不可用，请稍后重试。';
+const INPUT_FIELD_MESSAGES = {
+  entryDate: '请填写有效且不晚于今天的记录日期。',
+  text: '请填写 1 至 5000 个有效字符的原文，并检查是否含有无法保存的字符。',
+  expectedRevision: '记录版本无效，请重新读取后再操作。',
+  'X-Client-Time-Zone': '记录时区无效，请刷新页面后重试。',
+};
+const SAFE_INPUT_FIELD_MESSAGES = {
+  entryDate: ['请选择记录日期。', '日期必须是有效的 YYYY-MM-DD，年份为0001到9999。', '记录日期不能晚于当前时区的今天。'],
+  text: ['请填写原文。', '原文必须是文字。', '原文包含无法保存的空字符，请删除后重试。',
+    '原文包含无效 Unicode 字符，请检查后重试。', '原文至少需要1个有效字符。', '原文不能超过5000个有效字符。'],
+};
+const RESPONSE_ERROR_CODES = {
+  400: ['INVALID_INPUT'],
+  401: ['UNAUTHENTICATED'],
+  403: ['CORS_ORIGIN_DENIED', 'CORS_METHOD_DENIED', 'CORS_HEADERS_DENIED'],
+  404: ['NOT_FOUND', 'ENTRY_NOT_FOUND', 'BOOK_NOT_FOUND'],
+  405: ['METHOD_NOT_ALLOWED'],
+  409: ['DUPLICATE_ENTRY', 'VERSION_CONFLICT', 'NOTE_LINK_CONFLICT'],
+  413: ['PAYLOAD_TOO_LARGE'],
+  415: ['UNSUPPORTED_MEDIA_TYPE'],
+};
+
+function responseErrorCode(status, code) {
+  const known = status >= 500 ? ['INTERNAL_ERROR', 'WRITE_FAILED'] : RESPONSE_ERROR_CODES[status] || [];
+  return known.includes(code) ? code : status >= 500 ? 'SERVER_ERROR' : 'REQUEST_FAILED';
+}
+
+function responseErrorMessage(status, code) {
+  if (status === 401) return '登录凭证无效或已过期，请重新登录。';
+  if (status === 403) return '当前请求未获允许，请核对登录状态与请求配置。';
+  if (status === 400) return '请检查必填字段和输入内容。';
+  if (status === 404) return code === 'ENTRY_NOT_FOUND'
+    ? '记录不存在或不属于当前用户。' : '请求的内容不存在，请重新读取后重试。';
+  if (status === 409) {
+    if (code === 'DUPLICATE_ENTRY') return '这一天已经保存过完全相同的原文，请勿重复提交。';
+    if (code === 'VERSION_CONFLICT') return '记录已发生变化，请先重新读取，再核对修改或删除。';
+    if (code === 'NOTE_LINK_CONFLICT') return '记录来源与阅读感悟关联不一致，已停止删除。';
+    return '数据已发生变化，请重新读取并核对后再操作。';
+  }
+  if (status === 405) return '此操作暂不受支持，请核对请求方式。';
+  if (status === 413) return '提交内容过大，请缩短后重试。';
+  if (status === 415) return '提交格式不受支持，请核对请求格式。';
+  if (status === 429) return '请求过于频繁，请稍后重试。';
+  return '请求未能完成，请核对输入和登录状态后重试。';
+}
+
+function safeInputFields(fields) {
+  if (!isObject(fields)) return undefined;
+  const safe = {};
+  for (const key of Object.keys(INPUT_FIELD_MESSAGES)) {
+    if (Object.hasOwn(fields, key)) safe[key] = SAFE_INPUT_FIELD_MESSAGES[key]?.includes(fields[key])
+      ? fields[key] : INPUT_FIELD_MESSAGES[key];
+  }
+  return Object.keys(safe).length ? safe : undefined;
+}
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -70,7 +126,7 @@ function isEntryList(data, limit) {
 }
 
 function requireToken(token) {
-  if (typeof token !== 'string' || token.length === 0 || token.length > 8192 || /\s/.test(token)) {
+  if (typeof token !== 'string' || token.length === 0 || token.length > 8192 || /[\s\u0000-\u001f\u007f]/.test(token)) {
     throw apiError('请先准备有效的用户登录凭证。', { code: 'UNAUTHENTICATED' });
   }
 }
@@ -92,6 +148,9 @@ function validateInput(input) {
 
 function validateEntryTarget(entryId, expectedRevision) {
   if (typeof entryId !== 'string' || !entryId || entryId.length > 256 || /[\u0000-\u001f\u007f]/.test(entryId)) {
+    throw apiError('记录 ID 无效，请重新读取记录。', { code: 'INVALID_INPUT' });
+  }
+  try { encodeURIComponent(entryId); } catch {
     throw apiError('记录 ID 无效，请重新读取记录。', { code: 'INVALID_INPUT' });
   }
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
@@ -145,6 +204,15 @@ export function createPublicApiClient({ apiOrigin, requestOrigin = apiOrigin, fe
       });
       httpStatus = response.status;
       requestId = response.headers.get('x-request-id');
+      // 先按 HTTP 状态识别服务故障；即使网关返回 HTML，也不当作用户输入或网络失败。
+      if (httpStatus >= 500) {
+        let code = 'SERVER_ERROR';
+        try {
+          const failure = await response.json();
+          code = responseErrorCode(httpStatus, failure?.error?.code);
+        } catch { /* 响应正文不可读时，仍使用固定中文服务故障提示。 */ }
+        throw apiError(SERVER_ERROR_MESSAGE, { code, httpStatus, requestId, url });
+      }
       let payload;
       try { payload = await response.json(); } catch {
         throw apiError('接口返回的内容不是有效 JSON，请核对公网路由。', {
@@ -172,8 +240,12 @@ export function createPublicApiClient({ apiOrigin, requestOrigin = apiOrigin, fe
         && typeof payload.error.retryable === 'boolean'
         && (payload.error.fields === undefined || (isObject(payload.error.fields)
           && Object.values(payload.error.fields).every(value => typeof value === 'string')))) {
-        throw apiError(payload.error.message, {
-          code: payload.error.code, httpStatus, fields: payload.error.fields, requestId, url,
+        // 上游 message 和 fields 可能带有英文异常或内部详情，只呈现本地固定中文。
+        const code = responseErrorCode(httpStatus, payload.error.code);
+        throw apiError(responseErrorMessage(httpStatus, code), {
+          code, httpStatus,
+          fields: httpStatus === 400 && payload.error.code === 'INVALID_INPUT' ? safeInputFields(payload.error.fields) : undefined,
+          requestId, url,
         });
       }
       if (httpStatus !== expectedStatus || payload.ok !== true || payload.error !== null || !validate(payload.data)) {

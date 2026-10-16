@@ -137,9 +137,9 @@ function createServer({ authenticate, read, write, allowedOrigin, logError = () 
         ok: false, data: null,
         error: {
           code,
-          message: known ? error.message : writing ? '写入失败，请稍后重试。' : '读取失败，请稍后重试。',
+          message: status >= 500 ? '服务暂时不可用，请稍后重试。' : error.message,
           retryable: known ? error.retryable : true,
-          ...(known && error.fields ? { fields: error.fields } : {}),
+          ...(known && status < 500 && error.fields ? { fields: error.fields } : {}),
         },
       }));
     }

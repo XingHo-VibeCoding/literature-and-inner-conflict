@@ -312,7 +312,8 @@ test('复制仅限显式点击且读取200后可用，401/清除禁用，剪贴�
   assert.equal(copyButton().disabled, true, 'pagehide后禁用复制');
   mode = 'entries-401';
   await submitLogin();
-  await settleUntil(() => document.body.textContent.includes('虚构的 entries 凭证已过期。'), '401后禁用复制');
+  await settleUntil(() => document.body.textContent.includes('登录凭证无效或已过期，请重新登录。'), '401固定中文后禁用复制');
+  assert.equal(document.body.textContent.includes('虚构的 entries 凭证已过期。'), false, '不透传上游任意错误文案');
   assert.equal(copyButton().disabled, true);
   await act(async () => copyButton().click());
   assert.deepEqual(clipboardWrites, [fakeToken], '401不能再复制');

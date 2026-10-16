@@ -135,7 +135,7 @@ test('新增必须 HTTP201，发送契约字段并原样保留空格换行', asy
 
 test('无效凭证、日期及分页参数在发送请求前停止', async () => {
   const { client, calls } = setup(success(list()));
-  for (const token of [undefined, '', 'fictional\ninvalid']) {
+  for (const token of [undefined, '', 'fictional\ninvalid', 'fictional\u0000invalid', 'fictional\u007finvalid']) {
     await assert.rejects(client.getEntries({ token }), error => error.code === 'UNAUTHENTICATED');
   }
   await assert.rejects(client.getEntries({ token: TOKEN, limit: 0 }), error => error.code === 'INVALID_INPUT');
@@ -166,6 +166,63 @@ test('服务端字段错误通过 fields 传给页面', async () => {
   const { client } = setup(failure('INVALID_INPUT', '请检查必填字段和输入内容。', fields), 400);
   await assert.rejects(client.createEntry({ token: TOKEN, input: ENTRY }), error =>
     error.code === 'INVALID_INPUT' && error.httpStatus === 400 && error.fields.text === fields.text);
+});
+
+test('Day23 服务故障统一中文，JSON、HTML 与正文读取失败均保留 HTTP 和关联 ID', async () => {
+  const detail = '【虚构内部详情】Error: database connection failed at private-path';
+  for (const [status, code] of [[500, 'INTERNAL_ERROR'], [503, 'WRITE_FAILED'], [502, detail]]) {
+    const { client, calls } = setup(failure(code, detail, { text: detail }), status);
+    await assert.rejects(client.getEntries({ token: TOKEN }), error => {
+      assert.equal(error.message, '服务暂时不可用，请稍后重试。');
+      assert.equal(error.code, status === 502 ? 'SERVER_ERROR' : code);
+      assert.equal(error.httpStatus, status);
+      assert.equal(error.requestId, REQUEST_ID);
+      assert.equal(error.fields, undefined);
+      assert.ok(!JSON.stringify({ message: error.message, ...error }).includes(detail));
+      return true;
+    });
+    assert.equal(calls.length, 1, '服务故障不会自动重试');
+  }
+  for (const fetchImpl of [
+    async () => new Response('<html>' + detail + '</html>', { status: 503, headers: { 'X-Request-Id': REQUEST_ID } }),
+    async () => ({ status: 502, headers: new Headers({ 'X-Request-Id': REQUEST_ID }), json: async () => { throw new Error(detail); } }),
+  ]) {
+    const client = createPublicApiClient({ apiOrigin: ORIGIN, fetchImpl });
+    await assert.rejects(client.getHealth(), error => error.code === 'SERVER_ERROR'
+      && error.httpStatus >= 500 && error.requestId === REQUEST_ID && error.message === '服务暂时不可用，请稍后重试。');
+  }
+});
+
+test('Day23 客户端错误不透传上游消息、未知代码或字段，已登记字段保留安全中文', async () => {
+  const detail = '【虚构内部详情】SQL failed: private-path';
+  const fields = { text: detail, entryDate: '请选择记录日期。', expectedRevision: detail,
+    'X-Client-Time-Zone': detail, [detail]: detail };
+  const { client } = setup(failure('INVALID_INPUT', detail, fields), 400);
+  await assert.rejects(client.createEntry({ token: TOKEN, input: ENTRY }), error => {
+    assert.equal(error.code, 'INVALID_INPUT');
+    assert.equal(error.httpStatus, 400);
+    assert.equal(error.requestId, REQUEST_ID);
+    assert.equal(error.message, '请检查必填字段和输入内容。');
+    assert.deepEqual(error.fields, {
+      entryDate: '请选择记录日期。',
+      text: '请填写 1 至 5000 个有效字符的原文，并检查是否含有无法保存的字符。',
+      expectedRevision: '记录版本无效，请重新读取后再操作。',
+      'X-Client-Time-Zone': '记录时区无效，请刷新页面后重试。',
+    });
+    assert.ok(!JSON.stringify({ message: error.message, ...error }).includes(detail));
+    return true;
+  });
+  for (const [status, code, expectedCode, message] of [
+    [401, 'UNAUTHENTICATED', 'UNAUTHENTICATED', '登录凭证无效或已过期，请重新登录。'],
+    [404, 'ENTRY_NOT_FOUND', 'ENTRY_NOT_FOUND', '记录不存在或不属于当前用户。'],
+    [409, 'VERSION_CONFLICT', 'VERSION_CONFLICT', '记录已发生变化，请先重新读取，再核对修改或删除。'],
+    [418, detail, 'REQUEST_FAILED', '请求未能完成，请核对输入和登录状态后重试。'],
+    [400, 'UNAUTHENTICATED', 'REQUEST_FAILED', '请检查必填字段和输入内容。'],
+  ]) {
+    const rejected = setup(failure(code, detail, fields), status).client;
+    await assert.rejects(rejected.getEntries({ token: TOKEN }), error => error.code === expectedCode
+      && error.httpStatus === status && error.message === message && error.fields === undefined);
+  }
 });
 
 test('非 JSON 返回明确格式错误，网络错误不会泄露底层详情', async () => {
@@ -269,15 +326,17 @@ test('PATCH/DELETE 无效 ID、版本、未登记字段和空修改均不发请�
   for (const input of [{ expectedRevision: 2 }, { text: '正文', expectedRevision: 0 }, { text: null, expectedRevision: 2 }, { entryDate: '2026-02-30', expectedRevision: 2 }, { text: '正文', expectedRevision: 2, ownerId: '不允许' }]) {
     await assert.rejects(client.updateEntry({ token: TOKEN, entryId: ENTRY.id, input }), error => error.code === 'INVALID_INPUT');
   }
-  for (const entryId of ['', undefined, '含\n换行']) {
+  for (const entryId of ['', undefined, '含\n换行', '\ud800', '\udfff']) {
     await assert.rejects(client.deleteEntry({ token: TOKEN, entryId, expectedRevision: 2 }), error => error.code === 'INVALID_INPUT');
+    await assert.rejects(client.updateEntry({ token: TOKEN, entryId, input: { text: ENTRY.text, expectedRevision: 2 } }),
+      error => error.code === 'INVALID_INPUT' && error.message === '记录 ID 无效，请重新读取记录。');
   }
   await assert.rejects(client.deleteEntry({ token: TOKEN, entryId: ENTRY.id, expectedRevision: '2' }), error => error.code === 'INVALID_INPUT');
   assert.equal(calls.length, 0);
 });
 
-test('PATCH/DELETE 的不存在及版本冲突中文错误原样返回，不自动重试', async () => {
-  for (const [status, code, message] of [[404, 'ENTRY_NOT_FOUND', '找不到这条记录，请重新读取列表。'], [409, 'VERSION_CONFLICT', '记录已变化，请重新读取。']]) {
+test('PATCH/DELETE 的不存在及版本冲突统一中文错误，不自动重试', async () => {
+  for (const [status, code, message] of [[404, 'ENTRY_NOT_FOUND', '记录不存在或不属于当前用户。'], [409, 'VERSION_CONFLICT', '记录已发生变化，请先重新读取，再核对修改或删除。']]) {
     const { client, calls } = setup(failure(code, message), status);
     await assert.rejects(client.updateEntry({ token: TOKEN, entryId: ENTRY.id, input: { text: '【虚构】修改', expectedRevision: 2 } }), error => error.httpStatus === status && error.message === message);
     await assert.rejects(client.deleteEntry({ token: TOKEN, entryId: ENTRY.id, expectedRevision: 2 }), error => error.httpStatus === status && error.message === message);
