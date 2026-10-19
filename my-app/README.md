@@ -37,3 +37,23 @@ npm run build
 ## Day 7 截图
 
 请你自己在浏览器打开本地首页或能辨认项目的书单页，保留**以 `localhost` 开头的地址栏**和页面内容在同一张截图里。先核对页面已加载，再使用浏览器或系统截图功能拍摄；只截页面内部、看不到地址栏的图片不符合今日截图要求。
+
+## Day 25｜可复用的发布前检查
+
+在 Codex 中要求“使用 my-app/.agents/skills/verify-project 的 verify-project Skill 检查当前项目”，或在 my-app 目录手动运行：
+
+```powershell
+node .agents/skills/verify-project/scripts/verify.mjs --report day25/check-20261020-1
+```
+
+检查会逐项输出 PASS/FAIL、命令和实际证据，涵盖既有回归、构建配置、项目范围内的密钥规则、公网资源、线上版本、健康接口及跨域预检；不自动部署或操作真实业务记录。JSON、Markdown与HTML报告保存在本地 `_logs/day25/`，由 Git 忽略。每轮换一个新的 `--report` 名称；同名报告会被拒绝覆盖，以保留前一轮证据。
+
+用错误发布地址验证它不会虚报通过（只改变本次检查输入，不改线上）：
+
+```powershell
+node .agents/skills/verify-project/scripts/verify.mjs --site http://localhost:5173 --report day25/fault
+```
+
+预期公网目标项明确 FAIL，总结果 FAIL。保存该轮证据后，去掉 `--site` 参数重跑默认地址，另存报告。退出0仅表示本轮自动项全过；退出1表示有失败/未验证项；退出2表示参数或执行过程不完整，均需查看证据。真实会话、云数据库权限与CRUD未执行时仍是“未验证”，不能用本地模拟测试替代。
+
+本地开发服务器运行时，可打开 `http://localhost:5173/_logs/day25/fault.html` 查看故障报告并截图。报告应同时显示错误输入、对应FAIL和具体原因。详细检查标准与历史踩坑依据见 [verify-project Skill](.agents/skills/verify-project/SKILL.md)。

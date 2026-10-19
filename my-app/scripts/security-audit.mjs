@@ -35,7 +35,6 @@ function fakeReason(value, key, context, names) {
   }
   return null;
 }
-
 function inspect(text, names) {
   const findings = [];
   const add = (offset, rule, reason) => findings.push({
@@ -67,12 +66,21 @@ function safePath(name) {
   return JSON.stringify(name); // 转义换行和控制字符，避免路径伪造输出。
 }
 
-function parseIndex(buffer) {
+function validScopePrefix(value) {
+  return typeof value === 'string' && value.length > 0 && value.length <= 240 && !path.posix.isAbsolute(value)
+    && !value.includes('\\') && value.split('/').every(part => part && part !== '.' && part !== '..'
+      && part.trim() === part && !/[\u0000-\u001f\u007f:*?[\]{}!]/.test(part));
+}
+function withinScope(name, prefix) {
+  return prefix === undefined || name === prefix || name.startsWith(prefix + '/');
+}
+function parseIndex(buffer, prefix) {
   const aliases = new Map();
   for (const entry of buffer.toString('utf8').split('\0').filter(Boolean)) {
     const tab = entry.indexOf('\t');
     const [mode, oid, stage] = entry.slice(0, tab).split(' ');
     const name = entry.slice(tab + 1);
+    if (!withinScope(name, prefix)) continue;
     if (tab < 0 || !/^[0-7]{6}$/.test(mode) || !/^[a-f0-9]{40,64}$/.test(oid ?? '')
         || !/^[0-3]$/.test(stage ?? '') || !name) throw new Error('Git 索引记录格式异常');
     if (mode === '160000') throw new Error('Git 索引含子模块，需额外审计，不能宣称已完整扫描');
@@ -126,13 +134,36 @@ function selfTest() {
   const stagedFindings = [...index].flatMap(([oid, names]) => inspect(stagedBlobs.get(oid), [...names]));
   check(inspect(source(field, ''), ['虚构/示例.js']).length === 0 && stagedFindings.some(item => !item.reason));
   check(parseIndex(Buffer.from(`100644 ${stagedId} 0\t甲.js\0` + `100644 ${stagedId} 0\t乙.js\0`)).size === 1);
+  for (const invalidPrefix of ['', '.', '..', '../my-app', '/my-app', 'my-app/', 'my-app//src', 'my-app/../src',
+    'C:/my-app', 'my-app\\src', 'my-app/*', 'my-app/[a]', 'my-app:src']) check(!validScopePrefix(invalidPrefix));
+  check(validScopePrefix('my-app') && validScopePrefix('my-app/中文目录'));
+  check(withinScope('my-app/src/a.js', 'my-app') && !withinScope('my-app2/a.js', 'my-app')
+    && !withinScope('other/my-app/a.js', 'my-app'));
+  const scopedIndex = parseIndex(Buffer.from('100644 ' + stagedId + ' 0\tmy-app/a.js\0'
+    + '100644 ' + stagedId + ' 0\tother/a.js\0'), 'my-app');
+  check(scopedIndex.size === 1 && [...scopedIndex.values()][0].size === 1
+    && [...scopedIndex.values()][0].has('my-app/a.js'));
   console.log(`安全扫描内存自测：${count} 项通过；仅使用运行时拼接的虚构数据。`);
 }
 
-function runAudit() {
+function runAudit(prefix) {
   const initial = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: process.cwd(), encoding: 'utf8' });
   if (initial.error || initial.status !== 0) throw new Error('无法从当前目录读取 Git 仓库根目录');
   const root = path.resolve(initial.stdout.trim());
+  if (prefix !== undefined && !validScopePrefix(prefix)) throw new Error('参数无效：--path 必须是规范的仓库相对目录，禁止点路径、绝对路径、反斜线和路径通配符');
+  const scopeRoot = prefix === undefined ? root : path.resolve(root, ...prefix.split('/'));
+  if (prefix !== undefined) {
+    let current = root;
+    for (const component of prefix.split('/')) {
+      current = path.join(current, component);
+      let stat;
+      try { stat = fs.lstatSync(current); } catch { throw new Error('参数无效：--path 必须指向仓库内现有目录'); }
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('参数无效：--path 不允许符号链接、目录联接或非目录');
+    }
+  }
+  const scopeArgs = prefix === undefined ? [] : ['--', prefix + '/'];
+  console.log(prefix === undefined ? '扫描范围：整个 Git 仓库（沿用无参数行为）。'
+    : '扫描范围：仓库相对目录 ' + safePath(prefix + '/') + '；工作区、暂存区及所有可达引用/reflog 历史内容均限定于此。');
   function git(args, input, optional = false) {
     const result = spawnSync('git', ['-C', root, ...args], { input, maxBuffer: 128 * 1024 * 1024 });
     if (result.error || result.status !== 0) {
@@ -144,15 +175,15 @@ function runAudit() {
   }
   const lines = (buffer) => buffer.toString('utf8').trim().split('\n').filter(Boolean);
   const zeroNames = (buffer) => buffer.toString('utf8').split('\0').filter(Boolean);
-  const tracked = new Set(zeroNames(git(['ls-files', '--cached', '-z'])));
-  const working = new Set(zeroNames(git(['ls-files', '--cached', '--others', '--exclude-standard', '-z'])));
+  const tracked = new Set(zeroNames(git(['ls-files', '--cached', '-z', ...scopeArgs])));
+  const working = new Set(zeroNames(git(['ls-files', '--cached', '--others', '--exclude-standard', '-z', ...scopeArgs])));
   const stats = { workingRead: 0, currentEnvSkipped: 0, deletedWorking: 0, indexBlobs: 0, indexBytes: 0, historyBlobs: 0, historyBytes: 0, knownFake: 0, pending: 0 };
   const report = (scope, name, finding, oid) => {
     if (finding.reason) { stats.knownFake += 1; return; }
     stats.pending += 1;
     console.log(`待处理｜${scope}｜${safePath(name)}｜行 ${finding.line ?? '不适用'}｜${finding.rule}${oid ? `｜对象 ${oid.slice(0, 12)}` : ''}`);
   };
-  const indexAliases = parseIndex(git(['ls-files', '--stage', '-z']));
+  const indexAliases = parseIndex(git(['ls-files', '--stage', '-z', ...scopeArgs]), prefix);
   for (const names of indexAliases.values()) {
     for (const name of names) if (sensitiveName(name)) report('暂存区', name, { rule: '暂存区包含敏感文件名' });
   }
@@ -170,6 +201,11 @@ function runAudit() {
       throw new Error('工作文件元数据读取失败');
     }
     if (!status.isFile()) { report('工作区', name, { rule: '非普通文件未读取，需人工核验' }); continue; }
+    if (prefix !== undefined) {
+      let physicalParent;
+      try { physicalParent = fs.realpathSync(path.dirname(absolute)); } catch { throw new Error('工作文件元数据读取失败'); }
+      if (physicalParent !== scopeRoot && !physicalParent.startsWith(scopeRoot + path.sep)) throw new Error('工作文件路径超出扫描范围');
+    }
     if (sensitiveName(name)) report('工作区', name, { rule: '敏感文件名需人工核验' });
     const text = fs.readFileSync(absolute).toString('utf8');
     stats.workingRead += 1;
@@ -184,21 +220,23 @@ function runAudit() {
     if (type === 'commit' || type === 'tree') roots.add(oid);
     if (type === 'tag') roots.add(git(['rev-parse', `${oid}^{}`]).toString('utf8').trim());
   }
-  const objectRows = lines(git(['rev-list', '--objects', '--all', '--reflog']));
+  const objectRows = prefix === undefined ? lines(git(['rev-list', '--objects', '--all', '--reflog'])) : [];
   const objectIds = new Set(objectRows.map(row => row.split(' ', 1)[0]));
   const aliases = new Map();
   const sensitiveHistory = new Set();
   for (const oid of roots) {
-    for (const entry of zeroNames(git(['ls-tree', '-r', '-z', '--full-tree', oid]))) {
+    for (const entry of zeroNames(git(['ls-tree', '-r', '-z', '--full-tree', oid, ...scopeArgs]))) {
       const tab = entry.indexOf('\t');
       const [, type, blob] = entry.slice(0, tab).split(' ');
       const name = entry.slice(tab + 1);
-      if (type !== 'blob') continue;
+      if (type !== 'blob' || !withinScope(name, prefix)) continue;
       if (!aliases.has(blob)) aliases.set(blob, new Set());
       aliases.get(blob).add(name);
       if (sensitiveName(name)) sensitiveHistory.add(`${blob}\t${name}`);
     }
   }
+  // 限定模式只读取该目录历史树收集的 blob，不枚举或读取兄弟目录对象内容。
+  if (prefix !== undefined) for (const oid of aliases.keys()) objectIds.add(oid);
   for (const item of sensitiveHistory) {
     const [oid, name] = item.split('\t');
     report('Git历史', name, { rule: '历史中存在敏感文件名' }, oid);
@@ -235,11 +273,11 @@ function runAudit() {
   }
   function countCommits(ref) {
     if (git(['rev-parse', '--verify', '--quiet', ref], undefined, true) === null) return '无此引用';
-    return git(['rev-list', '--count', ref]).toString('utf8').trim();
+    return git(['rev-list', '--count', ref, ...scopeArgs]).toString('utf8').trim();
   }
   console.log(`工作区：${tracked.size} 个跟踪路径；读取 ${stats.workingRead} 个跟踪或未忽略文件；跳过当前真实环境文件 ${stats.currentEnvSkipped} 个、已删除工作文件 ${stats.deletedWorking} 个。`);
   console.log(`暂存区：${stats.indexBlobs} 个唯一 blob；${stats.indexBytes} 字节；包含尚未进入可达历史的暂存内容。`);
-  console.log(`Git 历史：${refs.length} 个引用；main ${countCommits('main')} 次提交；本地 origin/main ${countCommits('origin/main')} 次提交；全引用 ${lines(git(['rev-list', '--all'])).length} 次提交；含 reflog ${commitIds.length} 次提交。`);
+  console.log(`Git 历史：${refs.length} 个引用；main ${countCommits('main')} 次提交；本地 origin/main ${countCommits('origin/main')} 次提交；全引用 ${lines(git(['rev-list', '--all', ...scopeArgs])).length} 次提交；含 reflog ${commitIds.length} 次提交。`);
   console.log(`历史覆盖：${roots.size} 个唯一提交或树根；${stats.historyBlobs} 个唯一 blob；${stats.historyBytes} 字节；敏感历史文件名 ${sensitiveHistory.size} 个。`);
   console.log(`明确虚构、示例或故意无效值：${stats.knownFake} 处（工作区、暂存区与历史分别计数；测试目录无整文件豁免）。`);
   console.log(`本轮规则下待处理凭证特征：${stats.pending} 条。`);
@@ -253,7 +291,8 @@ try {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === '--self-test') selfTest();
   else if (args.length === 0) runAudit();
-  else throw new Error('参数无效：只支持无参数扫描或 --self-test 内存自测');
+  else if (args.length === 2 && args[0] === '--path') runAudit(args[1]);
+  else throw new Error('参数无效：只支持无参数全仓扫描、--self-test 内存自测或 --path 规范仓库相对目录');
 } catch (error) {
   // 只输出受控错误说明，不输出异常堆栈、源文本或 Git 返回内容。
   console.error(`安全审计未完成：${error instanceof assert.AssertionError ? '内存自测未通过' : error.message?.startsWith('Git ') || /^(无法从|工作文件路径|工作文件元数据|Git blob|存在无法|参数无效)/.test(error.message ?? '') ? error.message : '文件或进程读取失败，请检查权限和仓库完整性'}。`);
