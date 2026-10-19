@@ -93,6 +93,21 @@ async function mockedFetch(url, options) {
     }
     const input = JSON.parse(options.body);
     const saved = { ...fictionalEntry(), ...input, id: 'day20-fictional-written', textVersion: 1, revision: 1 };
+    if (writeMode === 'concurrent-after-create') {
+      // 模拟本次 POST 成功后，另一会话又写入20条同日记录，再开始 GET。
+      const createdAt = Date.now() - 21000;
+      saved.createdAt = new Date(createdAt).toISOString();
+      saved.updatedAt = saved.createdAt;
+      const concurrent = Array.from({ length: 20 }, (_, index) => {
+        const timestamp = new Date(createdAt + (20 - index) * 1000).toISOString();
+        return { ...saved, id: `day24-fictional-concurrent-${index}`,
+          text: `【虚构·Day24并发写入】另一会话的第${index + 1}条记录。`,
+          createdAt: timestamp, updatedAt: timestamp };
+      });
+      rows = [...concurrent, saved, ...rows];
+      readMode = 'paged';
+      return reply(201, { ok: true, data: saved, error: null });
+    }
     rows = [saved, ...rows];
     return reply(201, { ok: true, data: saved, error: null });
   }
@@ -298,6 +313,31 @@ test('POST201但GET正文不一致时不记成功，仅重新读回且草稿完�
   await settleUntil(() => document.body.textContent.includes('写入验证通过：POST 201'), '只读核验取得一致正文');
   assert.equal(posts().length, 1, '没有重复写入');
   assert.equal(privateOriginal().textContent, draft);
+});
+
+test('Day24 新增目标在第二页时自动读回核对，只读重试不重复 POST', async () => {
+  await prepareCredential();
+  await settleUntil(() => privateOriginal(), '原有虚构记录读取');
+  writeMode = 'concurrent-after-create';
+  const draft = document.getElementById('cloud-test-text').value;
+  await click(button('写入虚构记录并读回核对'));
+  await settleUntil(() => document.body.textContent.includes('写入验证通过：POST 201')
+    || document.body.textContent.includes('写入尚未核验'), '取得本次新增的读回结果');
+
+  assert.equal(posts().length, 1, '整个新增核对只发送一次 POST');
+  assert.equal(rows[20].id, 'day20-fictional-written', '20条更新记录使本次目标位于第二页');
+  assert.equal(rows[20].text, draft, '第二页仍保留本次提交的原文');
+  const secondPageReads = () => sent.filter(request => request.method === 'GET' && request.url.includes('cursor=20')).length;
+  assert.ok(secondPageReads() > 0, '新增读回必须请求第二页，不能仅检查第一页就报告未读到');
+  assert.ok(document.body.textContent.includes('写入验证通过：POST 201'), '已存在的第二页目标应核对成功');
+  assert.ok([...document.querySelectorAll('.home-cloud-entry-list li')]
+    .some(item => item.textContent.includes('day20-fictional-written') && item.textContent.includes(draft)), '页面展示同一ID及原文供人工核对');
+
+  const previousSecondPageReads = secondPageReads();
+  await click(button('只读核对这次写入'));
+  await settleUntil(() => document.body.textContent.includes('写入验证通过：POST 201'), '只读重试仍读回第二页目标');
+  assert.equal(posts().length, 1, '只读重试不再发送 POST');
+  assert.ok(secondPageReads() > previousSecondPageReads, '只读重试也实际请求第二页');
 });
 
 

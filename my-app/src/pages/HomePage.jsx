@@ -304,11 +304,41 @@ export default function HomePage() {
     }
   }
 
+  // 三类写入共用完整分页核对，目标在后续页时也能按原文与版本验证。
+  async function readEntriesForVerification(controller, currentSession) {
+    const pages = [];
+    const items = [];
+    const seenIds = new Set();
+    const seenCursors = new Set();
+    let cursor;
+    let total;
+    let result;
+    do {
+      result = await apiSetup.client.getEntries({ token: tokenRef.current, signal: controller.signal, limit: 20, cursor });
+      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      if (total !== undefined && total !== result.data.total) throw new Error('读回期间记录总数发生变化，请仅重新读取核对。');
+      total = result.data.total;
+      pages.push(result.data);
+      for (const entry of result.data.items) {
+        if (seenIds.has(entry.id)) throw new Error('分页返回了重复 ID，本次尚未核对。');
+        seenIds.add(entry.id);
+        items.push(entry);
+      }
+      cursor = result.data.page.hasMore ? result.data.page.nextCursor : undefined;
+      if (cursor && seenCursors.has(cursor)) throw new Error('分页游标重复，本次尚未核对。');
+      if (cursor) seenCursors.add(cursor);
+    } while (cursor);
+    if (items.length !== total) throw new Error('全部分页条数与 total 不一致，本次尚未核对。');
+    setView({ status: items.length ? 'content' : 'empty', items, total, page: result.data.page,
+      error: '', code: '', ...requestEvidence(result), fetchedAt: new Date().toISOString(), loadingMore: false });
+    return { items, total, pages, result };
+  }
+
   async function readBack(receipt, controller, currentSession) {
-    const result = await apiSetup.client.getEntries({ token: tokenRef.current, signal: controller.signal, limit: 20 });
-    if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
-    setView({ status: result.data.items.length ? 'content' : 'empty', items: result.data.items, total: result.data.total, page: result.data.page, error: '', code: '', ...requestEvidence(result), fetchedAt: new Date().toISOString(), loadingMore: false });
-    const saved = result.data.items.find((entry) => entry.id === receipt.entry.id);
+    const verified = await readEntriesForVerification(controller, currentSession);
+    if (!verified) return;
+    const { items, result } = verified;
+    const saved = items.find((entry) => entry.id === receipt.entry.id);
     if (!saved || saved.entryDate !== receipt.entry.entryDate || saved.text !== receipt.entry.text
       || saved.entryDate !== receipt.input.entryDate || saved.text !== receipt.input.text) {
       setWriteState({ status: 'readback-error', message: 'POST 已返回 201，但本次列表未读到 ID、日期和原文完全一致的记录。写入尚未核验，请先只读核对，勿重复创建。', ...requestEvidence(result) });
@@ -382,31 +412,9 @@ export default function HomePage() {
   }
 
   async function readBackMutation(receipt, controller, currentSession) {
-    const pages = [];
-    const items = [];
-    const seenIds = new Set();
-    const seenCursors = new Set();
-    let cursor;
-    let total;
-    let result;
-    do {
-      result = await apiSetup.client.getEntries({ token: tokenRef.current, signal: controller.signal, limit: 20, cursor });
-      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
-      if (total !== undefined && total !== result.data.total) throw new Error('读回期间记录总数发生变化，请仅重新读取核对。');
-      total = result.data.total;
-      pages.push(result.data);
-      for (const entry of result.data.items) {
-        if (seenIds.has(entry.id)) throw new Error('分页返回了重复 ID，本次尚未核对。');
-        seenIds.add(entry.id);
-        items.push(entry);
-      }
-      cursor = result.data.page.hasMore ? result.data.page.nextCursor : undefined;
-      if (cursor && seenCursors.has(cursor)) throw new Error('分页游标重复，本次尚未核对。');
-      if (cursor) seenCursors.add(cursor);
-    } while (cursor);
-    if (items.length !== total) throw new Error('全部分页条数与 total 不一致，本次尚未核对。');
-    setView({ status: items.length ? 'content' : 'empty', items, total, page: result.data.page,
-      error: '', code: '', ...requestEvidence(result), fetchedAt: new Date().toISOString(), loadingMore: false });
+    const verified = await readEntriesForVerification(controller, currentSession);
+    if (!verified) return;
+    const { items, total, pages, result } = verified;
     const saved = items.find(entry => entry.id === receipt.before.id);
     const evidence = { before: receipt.before, after: saved, pages, total, readCount: items.length,
       writeStatus: receipt.httpStatus, ...requestEvidence(result) };
