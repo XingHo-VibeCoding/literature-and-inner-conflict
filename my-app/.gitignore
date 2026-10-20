@@ -24,3 +24,11 @@ cloudfunctions/reads/node_modules/
 secrets/
 credentials/
 *.log
+
+# Day 26：补齐发布检查要求的密钥文件忽略规则。
+*.jks
+*.keystore
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
