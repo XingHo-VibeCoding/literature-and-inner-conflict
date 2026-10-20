@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { homeSections } from '../services/homeMock.js';
 import { createPublicApiClient } from '../services/publicApi.js';
+import { createAccountAuthClient } from '../services/accountAuth.js';
+import AccountPanel from '../components/AccountPanel.jsx';
 
 const updateFormatter = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -46,6 +48,14 @@ export default function HomePage() {
       return { client: null, error: error.message };
     }
   }, [apiOrigin]);
+  const accountSetup = useMemo(() => {
+    try {
+      return { client: createAccountAuthClient({ authOrigin: import.meta.env.VITE_AUTH_ORIGIN || '',
+        registrationOrigin: apiOrigin, registrationRequestOrigin: import.meta.env.DEV ? '' : apiOrigin }), error: '' };
+    } catch (error) {
+      return { client: null, error: error.message };
+    }
+  }, [apiOrigin]);
   const publicOrigin = apiOrigin.replace(/\/$/, '');
   const tokenRef = useRef('');
   const sessionVersion = useRef(0);
@@ -54,6 +64,7 @@ export default function HomePage() {
   const writingRef = useRef(false);
   const loginController = useRef(null);
   const loginBusyRef = useRef(false);
+  const accountAttemptRef = useRef(null);
   const copyBusyRef = useRef(false);
   const deleteDialog = useRef(null);
   const deleteTrigger = useRef(null);
@@ -63,6 +74,9 @@ export default function HomePage() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginState, setLoginState] = useState({ status: 'idle', message: '', loginStatus: null, profileStatus: null, matched: null });
+  const [accountState, setAccountState] = useState({ status: 'idle', message: '' });
+  const [accountVerified, setAccountVerified] = useState(false);
+  const [accountResetVersion, setAccountResetVersion] = useState(0);
   const [hasCredential, setHasCredential] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
   const [credentialError, setCredentialError] = useState('');
@@ -131,6 +145,7 @@ export default function HomePage() {
       });
     }).catch((error) => {
       if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      if (expireSession(error)) return;
       setView((current) => readRequest.append && current.items.length && error.httpStatus !== 401 && error.code !== 'UNAUTHENTICATED'
         ? { ...current, loadingMore: false, error: error.message, code: error.code || '', ...requestEvidence(error) }
         : { ...emptyView(error.httpStatus === 401 || error.code === 'UNAUTHENTICATED' ? 'unauthorized' : 'error'), error: error.message, code: error.code || '', ...requestEvidence(error) });
@@ -179,6 +194,79 @@ export default function HomePage() {
     setDeleteEvidence(null);
   }
 
+  function expireSession(error) {
+    if ((error.httpStatus !== 401 && error.code !== 'UNAUTHENTICATED') || !tokenRef.current) return false;
+    sessionVersion.current += 1;
+    readController.current?.abort();
+    writeController.current?.abort();
+    loginController.current?.abort();
+    writingRef.current = loginBusyRef.current = copyBusyRef.current = false;
+    tokenRef.current = '';
+    setHasCredential(false);
+    setAccountVerified(false);
+    setAccountResetVersion((version) => version + 1);
+    accountAttemptRef.current = null;
+    setTestText(makeTestText());
+    setAccountState({ status: 'error', message: '登录状态已失效，请重新登录。' });
+    setLoginPassword('');
+    setTokenInput('');
+    setCopyState({ status: 'idle', message: '' });
+    resetMutations();
+    setWriteReceipt(null);
+    setWriteState({ status: 'idle', message: '', httpStatus: null, requestId: null });
+    setView({ ...emptyView('unauthorized'), error: error.message, code: error.code || '', ...requestEvidence(error) });
+    return true;
+  }
+
+  async function authenticateAccount({ mode, username, password }) {
+    if (writingRef.current || loginBusyRef.current) return;
+    if (!accountSetup.client || !apiSetup.client) {
+      setAccountState({ status: 'error', message: accountSetup.error || '记录服务暂不可用，请稍后再试。' });
+      return;
+    }
+    sessionVersion.current += 1;
+    const currentSession = sessionVersion.current;
+    readController.current?.abort();
+    loginController.current?.abort();
+    writeController.current?.abort();
+    const controller = new AbortController();
+    loginController.current = controller;
+    loginBusyRef.current = true;
+    tokenRef.current = '';
+    setTokenInput('');
+    setHasCredential(false);
+    setAccountVerified(false);
+    accountAttemptRef.current = mode;
+    setTestText(makeTestText());
+    setCredentialError('');
+    setLoginPassword('');
+    setLoginState({ status: 'idle', message: '', loginStatus: null, profileStatus: null, matched: null });
+    resetMutations();
+    setCopyState({ status: 'idle', message: '' });
+    setWriteReceipt(null);
+    setWriteState({ status: 'idle', message: '', httpStatus: null, requestId: null });
+    setView(emptyView('unauthorized'));
+    setAccountState({ status: 'loading', message: mode === 'register' ? '正在创建账号并登录…' : '正在登录并验证身份…' });
+    try {
+      const operation = mode === 'register' ? accountSetup.client.signUp : accountSetup.client.signIn;
+      const pending = operation({ username, password, signal: controller.signal });
+      username = password = null;
+      const result = await pending;
+      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      tokenRef.current = result.token;
+      setHasCredential(true);
+      setAccountVerified(true);
+      setAccountState({ status: 'success', message: result.registered ? '注册成功，已登录。正在读取你的记录。' : '已登录，正在读取你的记录。' });
+      refreshEntries();
+    } catch (error) {
+      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      setAccountState({ status: 'error', message: error.code ? error.message : '暂时未能完成，请稍后重试。', registered: error.registered === true });
+    } finally {
+      username = password = null;
+      if (currentSession === sessionVersion.current) { loginBusyRef.current = false; accountAttemptRef.current = null; }
+    }
+  }
+
   function prepareCredential(event) {
     event.preventDefault();
     if (writingRef.current || loginBusyRef.current) return;
@@ -198,6 +286,10 @@ export default function HomePage() {
     setLoginPassword('');
     setLoginState({ status: 'idle', message: '', loginStatus: null, profileStatus: null, matched: null });
     tokenRef.current = token;
+    setTestText(makeTestText());
+    setAccountVerified(false);
+    setAccountResetVersion((version) => version + 1);
+    setAccountState({ status: 'idle', message: '' });
     setHasCredential(true);
     setCredentialError('');
     setWriteReceipt(null);
@@ -207,6 +299,8 @@ export default function HomePage() {
   }
 
   function clearCredential() {
+    const registrationUnconfirmed = accountAttemptRef.current === 'register' && loginBusyRef.current;
+    accountAttemptRef.current = null;
     sessionVersion.current += 1;
     resetMutations();
     copyBusyRef.current = false;
@@ -222,6 +316,12 @@ export default function HomePage() {
     tokenRef.current = '';
     setTokenInput('');
     setHasCredential(false);
+    setAccountVerified(false);
+    setAccountResetVersion((version) => version + 1);
+    setAccountState(registrationUnconfirmed
+      ? { status: 'error', message: '注册已停止等待，结果尚未确认。请先尝试登录，勿重复注册。', suggestLogin: true }
+      : { status: 'idle', message: '' });
+    setTestText(makeTestText());
     setCredentialError('');
     setView(emptyView('unauthorized'));
     setWriteReceipt(null);
@@ -252,6 +352,10 @@ export default function HomePage() {
     setView(emptyView('unauthorized'));
     setWriteReceipt(null);
     setWriteState({ status: 'idle', message: '', httpStatus: null, requestId: null });
+    setAccountVerified(false);
+    setTestText(makeTestText());
+    setAccountResetVersion((version) => version + 1);
+    setAccountState({ status: 'idle', message: '' });
     setLoginState({ status: 'loading', message: '正在登录并核对测试用户身份…', loginStatus: null, profileStatus: null, matched: null });
     refreshEntries();
     try {
@@ -363,6 +467,7 @@ export default function HomePage() {
       await readBack(receipt, controller, currentSession);
     } catch (error) {
       if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      if (expireSession(error)) return;
       const fields = error.fields ? Object.values(error.fields).join('；') : '';
       setWriteState({ status: receipt ? 'readback-error' : error.httpStatus === 409 ? 'duplicate' : 'error',
         message: receipt ? `POST 已返回 201，但读回核对失败：${error.message} 请先只读核对，勿重复创建。`
@@ -385,7 +490,7 @@ export default function HomePage() {
     try {
       await readBack(writeReceipt, controller, currentSession);
     } catch (error) {
-      if (!controller.signal.aborted && currentSession === sessionVersion.current) setWriteState({ status: 'readback-error', message: `读回核对失败：${error.message} 已保留 POST 201 的结果，未重复写入。`, ...requestEvidence(error) });
+      if (!controller.signal.aborted && currentSession === sessionVersion.current && !expireSession(error)) setWriteState({ status: 'readback-error', message: `读回核对失败：${error.message} 已保留 POST 201 的结果，未重复写入。`, ...requestEvidence(error) });
     } finally {
       if (currentSession === sessionVersion.current) writingRef.current = false;
     }
@@ -477,6 +582,7 @@ export default function HomePage() {
       await readBackMutation(receipt, controller, currentSession);
     } catch (error) {
       if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
+      if (expireSession(error)) return;
       const fields = error.fields ? Object.values(error.fields).join('；') : '';
       setMutationState({ status: receipt ? 'readback-error' : 'error',
         message: receipt ? `${operation} 已返回 200，但读回尚未核对：${error.message} 请只读核对，勿重复写入。`
@@ -499,7 +605,7 @@ export default function HomePage() {
     try {
       await readBackMutation(mutationReceipt, controller, currentSession);
     } catch (error) {
-      if (!controller.signal.aborted && currentSession === sessionVersion.current) setMutationState({ status: 'readback-error', message: `读回尚未核对：${error.message} 未重新发送写入请求。`, ...requestEvidence(error) });
+      if (!controller.signal.aborted && currentSession === sessionVersion.current && !expireSession(error)) setMutationState({ status: 'readback-error', message: `读回尚未核对：${error.message} 未重新发送写入请求。`, ...requestEvidence(error) });
     } finally {
       if (currentSession === sessionVersion.current) writingRef.current = false;
     }
@@ -510,7 +616,7 @@ export default function HomePage() {
   const completeAnalysis = analysis && analysis.source === 'ai' && typeof analysis.summary === 'string'
     && Array.isArray(analysis.questions) && analysis.questions.every((question) => typeof question === 'string');
   const reading = view.status === 'loading' || view.loadingMore;
-  const loginBusy = loginState.status === 'loading';
+  const loginBusy = loginState.status === 'loading' || accountState.status === 'loading';
   const canCopyCredential = hasCredential && view.httpStatus === 200 && ['content', 'empty'].includes(view.status);
   const writeBusy = writeState.status === 'writing' || writeState.status === 'verifying'
     || mutationState.status === 'writing' || mutationState.status === 'verifying';
@@ -530,6 +636,10 @@ export default function HomePage() {
           <span>北京时间 · 数据库 entries</span>
         </div>
       </section>
+
+      <AccountPanel state={accountState} disabled={writeBusy || loginBusy}
+        signedIn={accountVerified} resetVersion={accountResetVersion}
+        onSubmit={authenticateAccount} onCancel={clearCredential} onLogout={clearCredential} />
 
       <div className="home-workspace">
         <section className="home-state-card" aria-labelledby="home-state-title">

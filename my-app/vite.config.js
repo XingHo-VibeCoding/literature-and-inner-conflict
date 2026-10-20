@@ -49,7 +49,7 @@ export default defineConfig(({ mode }) => {
       host: 'localhost', port: 5173, strictPort: true,
       proxy: {
         // 本地同源代理只转发本任务指定的公网接口，不放行localhost跨域。
-        '^/api/(?:health|entries(?:/[^/?#]+)?)(?:\\?[^#]*)?$': {
+        '^/api/(?:health|register|entries(?:/[^/?#]+)?)(?:\\?[^#]*)?$': {
           target: apiOrigin, changeOrigin: true,
           headers: { Origin: staticOrigin },
         },

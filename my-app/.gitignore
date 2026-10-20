@@ -32,3 +32,6 @@ id_rsa
 id_dsa
 id_ecdsa
 id_ed25519
+
+# Day 27：独立注册函数部署包仅保存在本地。
+cloudfunctions/accounts.zip

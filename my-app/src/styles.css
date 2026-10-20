@@ -642,3 +642,35 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
 .home-page .home-cloud-write input + label { margin-top: 16px; }
 .home-page .home-cloud-write-result .home-cloud-entry-text { white-space: pre-wrap; }
 .home-page .home-cloud-json { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; font-size: 0.8125rem; line-height: 1.8; }
+
+/* Day27 普通账号入口：沿用暖纸与墨绿，表单在当前页面内展开。 */
+.home-account { margin: -10px 0 32px; padding: 18px 0; border-block: 1px solid var(--home-line); color: var(--home-ink); }
+.home-account-heading, .home-account-session { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.home-account-heading p, .home-account-session p { margin: 0; color: var(--home-green); font-size: 0.9375rem; line-height: 1.8; }
+.home-account button { min-height: 44px; max-width: 100%; padding: 10px 16px; border: 1px solid #829087; border-radius: 6px; background: #fffdf7; color: var(--home-green); font-size: 0.9375rem; line-height: 1.6; cursor: pointer; }
+.home-account button:hover:not(:disabled) { background: #e4ebdd; border-color: var(--home-green); }
+.home-account button:disabled { cursor: not-allowed; }
+.home-account :is(button, input):focus-visible { outline: 3px solid var(--home-green); outline-offset: 3px; }
+.home-account-panel { max-width: 540px; padding: 22px 0 4px; }
+.home-account-modes { display: flex; gap: 10px; margin-bottom: 24px; }
+.home-account-modes button { min-width: 88px; }
+.home-account-modes button[aria-pressed="true"], .home-account-submit { background: var(--home-green); border-color: var(--home-green); color: #fff; }
+.home-account-modes button[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 4px; }
+.home-account .home-account-submit { background: var(--home-green); border-color: var(--home-green); color: #fff; }
+.home-account-modes button[aria-pressed="true"]:hover:not(:disabled), .home-account .home-account-submit:hover:not(:disabled) { background: #365b43; color: #fff; }
+.home-account-field { margin-bottom: 20px; }
+.home-account-field label { display: block; margin: 0 0 8px; font-size: 0.9375rem; line-height: 1.6; }
+.home-account-field input { width: 100%; min-height: 46px; padding: 10px 14px; border: 1px solid #829087; border-radius: 6px; background: #fffefa; color: var(--home-ink); caret-color: var(--home-green); font-size: 1rem; line-height: 1.6; }
+.home-account-field input[aria-invalid="true"] { border-color: #982e2e; }
+.home-account-field input::selection { background: #dbe7d2; color: var(--home-ink); }
+.home-account-hint, .home-account-note, .home-account-status { margin: 8px 0 0; color: #54614f; font-size: 0.8125rem; line-height: 1.8; overflow-wrap: anywhere; }
+.home-account-symbols { overflow-wrap: anywhere; word-break: break-all; }
+.home-account-error { margin: 14px 0 0; color: #982e2e; font-size: 0.9375rem; line-height: 1.8; overflow-wrap: anywhere; }
+.home-account-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+@media (max-width: 600px) {
+  .home-account { margin: -6px 0 26px; padding: 16px 0; }
+  .home-account-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .home-account-panel { padding-top: 20px; }
+  .home-account-modes { margin-bottom: 20px; }
+  .home-account-actions button { flex: 1 1 auto; }
+}

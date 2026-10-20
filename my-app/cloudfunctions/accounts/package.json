@@ -1,0 +1,18 @@
+{
+  "name": "literature-accounts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Day 27 普通用户的最小用户名密码注册 HTTP 云函数",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test accounts.test.js"
+  },
+  "dependencies": {
+    "tencentcloud-sdk-nodejs-tcb": "4.1.328"
+  }
+}

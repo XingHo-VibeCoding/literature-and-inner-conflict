@@ -17,6 +17,11 @@ let writeMode;
 let pendingRead;
 let mutationMode;
 let pendingMutation;
+let accountMode;
+let pendingAccountLogin;
+const accountOrigin = 'https://fictional-day27-auth.invalid';
+const accountUsername = 'fictional-day27-trial';
+const accountPassword = 'Fictional-Day27!27';
 const originalGlobals = new Map();
 const fictionalToken = 'fictional-day20-token';
 
@@ -49,6 +54,25 @@ function listReply(items = rows, { total = items.length, ...page } = {}) {
 
 async function mockedFetch(url, options) {
   // 全部请求在内存中回答；从不转发公网，也不使用真实用户数据或凭证。
+  if (url.startsWith(accountOrigin) || url === '/api/register') {
+    sent.push({ url, method: options.method });
+    if (url === '/api/register') {
+      assert.deepEqual(JSON.parse(options.body), { username: accountUsername, password: accountPassword });
+      if (accountMode === 'duplicate') return reply(409, { ok: false, data: null, error: { code: 'USERNAME_TAKEN', message: '内部响应不能透传' } });
+      rows = [];
+      if (accountMode === 'pending-register') return new Promise(resolve => { pendingAccountLogin = () => resolve(reply(201, { ok: true, data: { registered: true }, error: null })); });
+      return reply(201, { ok: true, data: { registered: true }, error: null });
+    }
+    if (url.endsWith('/auth/v1/signin')) {
+      assert.deepEqual(JSON.parse(options.body), { username: accountUsername, password: accountPassword });
+      if (accountMode === 'login-reject' || accountMode === 'registered-login-failed') return reply(400, { error: 'invalid_username_or_password', error_description: accountPassword });
+      if (accountMode === 'pending') return new Promise(resolve => { pendingAccountLogin = () => resolve(reply(200, { access_token: fictionalToken })); });
+      return reply(200, { access_token: fictionalToken });
+    }
+    assert.equal(url, accountOrigin + '/auth/v1/user/me');
+    assert.equal(options.headers.Authorization, 'Bearer ' + fictionalToken);
+    return reply(200, { sub: 'fictional-day27-new-person', status: 'ACTIVE' });
+  }
   assert.ok(url.startsWith('/api/'), '本地测试只接收开发代理路径');
   sent.push({ url, method: options.method, body: options.body, token: options.headers.Authorization });
   if (url.endsWith('/api/health')) {
@@ -148,7 +172,8 @@ before(async () => {
   server = await createServer({
     configFile: false, plugins: [react()],
     server: { middlewareMode: true, hmr: false }, appType: 'custom',
-    define: { 'import.meta.env.VITE_API_ORIGIN': JSON.stringify('https://day20-api.test.invalid') },
+    define: { 'import.meta.env.VITE_API_ORIGIN': JSON.stringify('https://day20-api.test.invalid'),
+      'import.meta.env.VITE_AUTH_ORIGIN': JSON.stringify(accountOrigin) },
   });
   ({ default: HomePage } = await server.ssrLoadModule('/src/pages/HomePage.jsx'));
 });
@@ -161,6 +186,8 @@ beforeEach(async () => {
   pendingRead = null;
   mutationMode = 'success';
   pendingMutation = null;
+  accountMode = 'success';
+  pendingAccountLogin = null;
   window.history.replaceState(null, '', '#/');
   root = createRoot(document.getElementById('root'));
   await act(async () => root.render(React.createElement(HomePage)));
@@ -312,7 +339,7 @@ test('身份401及网络失败明确报错，不能被显示成数据库空列�
   assert.ok(!document.body.textContent.includes('当前身份的记录总数为 0'));
 
   readMode = 'network-error';
-  await click(button('刷新状态与云端记录'));
+  await prepareCredential(); // 401已清除无效会话，重新准备后单独验证网络失败。
   await settleUntil(() => document.body.textContent.includes('云端记录暂时没有读到'), '网络错误');
   assert.ok(document.body.textContent.includes('网络请求失败'));
   assert.ok(!document.body.textContent.includes('虚构的网络层错误详情'));
@@ -679,4 +706,152 @@ test('Day22 慢 DELETE 只发送一次，清凭证后迟到响应不能恢复私
   assert.ok(!document.body.textContent.includes('删除已核对：DELETE 200'));
   assert.ok(document.body.textContent.includes('本页未保存凭证'));
   // 已发出的请求可能已在服务端删除；这里只保证迟到响应不恢复私人界面。
+});
+
+
+async function fillAccountField(name, value) {
+  const input = document.querySelector('.home-account [name="' + name + '"]');
+  assert.ok(input, '账号字段存在：' + name);
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+  await act(async () => {
+    setter.call(input, value);
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  });
+}
+
+async function useAccount(mode = 'login', { twice = false } = {}) {
+  if (!document.querySelector('.home-account-form')) await click(button('登录 / 注册'));
+  if (mode === 'register') await click(button('注册', document.querySelector('.home-account-modes')));
+  await fillAccountField('username', accountUsername);
+  await fillAccountField('password', accountPassword);
+  if (mode === 'register') await fillAccountField('password-confirmation', accountPassword);
+  await act(async () => {
+    const form = document.querySelector('.home-account-form');
+    form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    if (twice) form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  });
+  for (const input of document.querySelectorAll('.home-account input[type="password"]')) assert.equal(input.value, '', '提交立即清空密码');
+}
+
+function assertAccountSecretsAbsent() {
+  assert.equal(window.localStorage.length, 0);
+  assert.equal(window.sessionStorage.length, 0);
+  assert.ok(!document.body.textContent.includes(accountPassword));
+  assert.ok(!document.body.textContent.includes(fictionalToken));
+}
+
+test('Day27 普通账号登录读取任意真实身份对应的虚构记录，退出清空私人内容', async () => {
+  await useAccount();
+  await settleUntil(() => document.querySelector('.home-account-signed-in') && document.querySelector('.home-cloud-original'), '普通登录读取');
+  assert.equal(document.querySelector('.home-cloud-original').textContent.includes(rows[0].text), true);
+  assert.deepEqual(sent.filter(request => request.url.startsWith(accountOrigin)).map(request => request.url), [accountOrigin + '/auth/v1/signin', accountOrigin + '/auth/v1/user/me']);
+  assert.equal(document.getElementById('home-cloud-check').open, false, '登录不自动展开检查台');
+  assertAccountSecretsAbsent();
+  const draftBox = document.getElementById('cloud-test-text');
+  const draftSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set;
+  await act(async () => { draftSetter.call(draftBox, '【虚构私人草稿】退出后必须清除'); draftBox.dispatchEvent(new dom.window.Event('input', { bubbles: true })); });
+  await click(button('退出登录'));
+  assert.ok(!draftBox.value.includes('【虚构私人草稿】'));
+  assert.equal(Boolean(document.querySelector('.home-cloud-original')), false);
+  assert.equal(Boolean(document.querySelector('.home-account-signed-in')), false);
+  assertAccountSecretsAbsent();
+});
+
+test('Day27 注册后以新身份完成虚构云端新增刷新修改删除，原文日期和版本可核对', async () => {
+  await useAccount('register');
+  await settleUntil(() => document.querySelector('.home-account-signed-in') && document.body.textContent.includes('当前身份的记录总数为 0'), '注册后空列表');
+  assert.equal(sent.filter(request => request.url === '/api/register').length, 1);
+  assert.equal(Boolean(document.querySelector('.home-cloud-original')), false, '新账号不显示别人的虚构原文');
+  await click(document.querySelector('#home-cloud-check > summary'));
+  await click(button('写入虚构记录并读回核对'));
+  await settleUntil(() => document.body.textContent.includes('写入验证通过：POST 201'), '注册后写入');
+  const before = structuredClone(rows[0]);
+  await click(button('刷新状态与云端记录'));
+  await settleUntil(() => document.querySelector('.home-cloud-original')?.textContent.includes(before.text), '刷新保留原文');
+  await click(button('选择此记录进行修改或删除'));
+  const original = before.text + '\n【虚构·Day27复验】修改后仍保留日期。';
+  const textarea = document.getElementById('cloud-edit-text');
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set;
+  await act(async () => { setter.call(textarea, original); textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true })); });
+  await act(async () => textarea.closest('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })));
+  await settleUntil(() => document.querySelector('[data-testid="patch-evidence"]'), '注册后修改');
+  assert.equal(rows[0].entryDate, before.entryDate);
+  assert.equal(rows[0].text, original);
+  await click(button('删除这条云端记录'));
+  await click(button('确认永久删除'));
+  await settleUntil(() => document.querySelector('[data-testid="delete-evidence"]'), '注册后删除');
+  assert.equal(rows.length, 0);
+  assertAccountSecretsAbsent();
+});
+
+test('Day27 登录失败显示固定中文，注册重名不继续登录或覆盖账号', async () => {
+  accountMode = 'login-reject';
+  await useAccount();
+  await settleUntil(() => document.body.textContent.includes('用户名或密码不正确'), '密码错误');
+  assert.equal(sent.filter(request => request.url.endsWith('/auth/v1/user/me')).length, 0);
+  assertAccountSecretsAbsent();
+  accountMode = 'duplicate';
+  await useAccount('register');
+  await settleUntil(() => document.body.textContent.includes('这个用户名已被使用'), '账号重名');
+  assert.equal(sent.filter(request => request.url.endsWith('/auth/v1/signin')).length, 1, '重复注册不发送登录或重试');
+  assertAccountSecretsAbsent();
+});
+
+test('Day27 取消待定普通登录及pagehide作废迟到身份，不能恢复私人内容', async () => {
+  accountMode = 'pending';
+  await useAccount('login', { twice: true });
+  await settleUntil(() => pendingAccountLogin, '待定登录');
+  assert.equal(sent.filter(request => request.url.endsWith('/auth/v1/signin')).length, 1);
+  await click(button('取消', document.querySelector('.home-account')));
+  await act(async () => { pendingAccountLogin(); });
+  assert.equal(sent.filter(request => request.url.endsWith('/auth/v1/user/me')).length, 0);
+  assert.equal(Boolean(document.querySelector('.home-cloud-original')), false);
+  accountMode = 'success';
+  await useAccount();
+  await settleUntil(() => document.querySelector('.home-cloud-original'), '取消后重新登录');
+  await act(async () => window.dispatchEvent(new dom.window.Event('pagehide')));
+  assert.equal(Boolean(document.querySelector('.home-cloud-original')), false);
+  assert.equal(Boolean(document.querySelector('.home-account-signed-in')), false);
+  assertAccountSecretsAbsent();
+});
+
+test('Day27 普通会话401清空私人内容并在收起面板外提示重新登录', async () => {
+  await useAccount();
+  await settleUntil(() => document.querySelector('.home-cloud-original'), '先登录');
+  readMode = 'unauthorized';
+  await click(button('刷新状态与云端记录'));
+  await settleUntil(() => document.body.textContent.includes('登录状态已失效，请重新登录。'), '过期提示');
+  assert.equal(Boolean(document.querySelector('.home-cloud-original')), false);
+  assert.equal(Boolean(document.querySelector('.home-account-signed-in')), false);
+  assert.equal(Boolean(document.querySelector('.home-account-form')), false, '面板仍收起而提示可见');
+  assert.equal(button('写入虚构记录并读回核对').disabled, true);
+  readMode = 'success';
+  await useAccount();
+  await settleUntil(() => document.querySelector('.home-cloud-original'), '过期后可重新登录');
+  assertAccountSecretsAbsent();
+});
+
+test('Day27 账号已创建但自动登录失败时切换登录，不诱导再次注册', async () => {
+  accountMode = 'registered-login-failed';
+  await useAccount('register');
+  await settleUntil(() => document.body.textContent.includes('账号已创建，自动登录未完成'), '已创建但登录失败');
+  assert.equal(document.querySelector('.home-account-modes button[aria-pressed="true"]').textContent, '登录');
+  assert.equal(Boolean(document.querySelector('.home-account [name="password-confirmation"]')), false);
+  assert.equal(sent.filter(request => request.url === '/api/register').length, 1);
+  assertAccountSecretsAbsent();
+});
+
+
+test('Day27 取消在途注册保留结果未知提示并切登录，迟到201不能恢复会话', async () => {
+  accountMode = 'pending-register';
+  await useAccount('register');
+  await settleUntil(() => pendingAccountLogin, '注册请求已发出');
+  await click(button('取消', document.querySelector('.home-account')));
+  assert.ok(document.body.textContent.includes('结果尚未确认。请先尝试登录'));
+  await act(async () => { pendingAccountLogin(); });
+  assert.equal(sent.filter(request => request.url.endsWith('/auth/v1/signin')).length, 0);
+  await click(button('登录 / 注册'));
+  assert.equal(document.querySelector('.home-account-modes button[aria-pressed="true"]').textContent, '登录');
+  assert.equal(Boolean(document.querySelector('.home-account-signed-in')), false);
+  assertAccountSecretsAbsent();
 });
