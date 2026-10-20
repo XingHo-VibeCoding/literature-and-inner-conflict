@@ -164,7 +164,7 @@ beforeEach(async () => {
   window.history.replaceState(null, '', '#/');
   root = createRoot(document.getElementById('root'));
   await act(async () => root.render(React.createElement(HomePage)));
-  await settleUntil(() => document.body.textContent.includes('先准备云端读取凭证')
+  await settleUntil(() => document.body.textContent.includes('尚未读取你的云端记录')
     && document.body.textContent.includes('健康接口正常'), '首页健康与凭证准备状态');
 });
 
@@ -219,11 +219,28 @@ function posts() { return sent.filter((request) => request.method === 'POST'); }
 test('虚构首页完整流程：原文保留、刷新跟随、409保草稿、201读回、清除私人数据', async () => {
   assert.equal(sent.length, 1, '无凭证仅请求健康接口');
   assert.equal(privateOriginal(), null);
-  await click(button('展开下方检查台 ↓'));
+  const guidance = document.querySelector('.home-guidance');
+  assert.ok(guidance.textContent.includes('把此刻写下来'), '未读取时仍有文学引导');
+  assert.ok(guidance.textContent.includes('本站原创寄语'), '引导不冒充用户记录或AI分析');
+  assert.equal(document.querySelector('.home-cloud-analysis'), null);
+  const recordTools = document.getElementById('home-record-tools');
+  assert.equal(recordTools.open, false, '说明和刷新默认收在卡片按钮里');
+  assert.equal(button('刷新状态与云端记录').closest('details'), recordTools);
+  const requestsBeforeOpen = sent.length;
+  await click(recordTools.querySelector('summary'));
+  assert.equal(recordTools.open, true);
+  assert.equal(sent.length, requestsBeforeOpen, '展开说明本身不发请求');
   const details = document.getElementById('home-cloud-check');
-  assert.equal(details.open, true);
+  const summary = details.querySelector('summary');
+  assert.equal(details.open, false, '首页默认不展开技术检查内容');
+  assert.equal(document.querySelector('.home-page').lastElementChild, details, '检查入口位于首页内容最下方');
+  assert.doesNotMatch(document.querySelector('.home-state-card').textContent, /access_token|凭证|检查台/, '近况不再引导用户进入开发检查');
+  await click(summary);
+  assert.equal(details.open, true, '底部入口可展开');
+  await click(summary);
+  assert.equal(details.open, false, '同一入口可收起');
+  await click(summary);
   assert.equal(window.location.hash, '#/', '展开检查台不占用首页 hash 路由');
-  assert.equal(document.activeElement, details.querySelector('summary'));
 
   await prepareCredential();
   await settleUntil(() => privateOriginal(), '显示虚构数据库记录');
@@ -233,9 +250,28 @@ test('虚构首页完整流程：原文保留、刷新跟随、409保草稿、20
   assert.equal(document.querySelector('.home-cloud-analysis'), null, '没有生成假分析');
   assert.ok(document.body.textContent.includes('HTTP：200'));
 
-  rows = [{ ...rows[0], text: '【虚构】数据库改行后刷新跟随。', revision: 3, textVersion: 3 }];
+  const originalBeforeAnalysis = rows[0].text;
+  const dateBeforeAnalysis = rows[0].entryDate;
+  rows = [{ ...rows[0], adoptedAnalysis: {
+    source: 'ai', summary: '【虚构AI】从写下一句话，开始理解此刻。',
+    questions: ['【虚构AI】你愿意先记下哪一件小事？'], sourceTextVersion: 2,
+    generationRequestId: 'day27-fictional-analysis', adoptedAt: '2026-10-20T01:00:00.000Z',
+  } }];
+  await click(button('刷新状态与云端记录'));
+  await settleUntil(() => document.querySelector('.home-cloud-analysis .home-summary'), '显示虚构已采纳分析');
+  const analysisBlock = document.querySelector('.home-cloud-analysis');
+  const originalBlock = document.querySelector('.home-cloud-original');
+  assert.ok(analysisBlock.textContent.includes('【虚构AI】从写下一句话'));
+  assert.ok(analysisBlock.compareDocumentPosition(originalBlock) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, '已采纳摘要在原文前');
+  assert.equal(document.querySelector('.home-guidance'), null, '已有真实采纳分析时不混入本站引导');
+  assert.equal(privateOriginal().textContent, originalBeforeAnalysis, '原文不因摘要展示而改写');
+  assert.equal(document.querySelector('.home-cloud-original time').textContent, dateBeforeAnalysis);
+
+  rows = [{ ...rows[0], text: '【虚构】数据库改行后刷新跟随。', revision: 3, textVersion: 3, adoptedAnalysis: null }];
   await click(button('刷新状态与云端记录'));
   await settleUntil(() => privateOriginal()?.textContent === rows[0].text, '刷新跟随改行');
+  assert.ok(document.querySelector('.home-guidance'), '没有采纳分析时恢复本站引导');
+  assert.equal(document.querySelector('.home-cloud-analysis'), null);
 
   writeMode = 'duplicate';
   const draft = document.getElementById('cloud-test-text').value;
@@ -258,7 +294,7 @@ test('虚构首页完整流程：原文保留、刷新跟随、409保草稿、20
   assert.equal(posts().length, postCount, '只读核验没有POST');
 
   await click(button('清除凭证与私人数据'));
-  await settleUntil(() => document.body.textContent.includes('先准备云端读取凭证'), '凭证清除');
+  await settleUntil(() => document.body.textContent.includes('尚未读取你的云端记录'), '凭证清除');
   assert.equal(privateOriginal(), null);
   assert.equal(document.querySelector('.home-cloud-entry-list'), null);
   assert.equal(dom.window.localStorage.length, 0);
@@ -270,7 +306,7 @@ test('身份401及网络失败明确报错，不能被显示成数据库空列�
   readMode = 'unauthorized';
   await prepareCredential();
   await settleUntil(() => document.body.textContent.includes('登录凭证无效或已过期，请重新登录。'), '401错误');
-  assert.ok(document.body.textContent.includes('先准备云端读取凭证'));
+  assert.ok(document.body.textContent.includes('尚未读取你的云端记录'));
   assert.ok(document.body.textContent.includes('HTTP：401'));
   assert.equal(privateOriginal(), null);
   assert.ok(!document.body.textContent.includes('当前身份的记录总数为 0'));
@@ -289,7 +325,7 @@ test('清除凭证会作废正在读取的私人请求，迟到结果不能重�
   await prepareCredential();
   await settleUntil(() => pendingRead, '虚构的慢读取已发出');
   await click(button('清除凭证与私人数据'));
-  await settleUntil(() => document.body.textContent.includes('先准备云端读取凭证'), '清除后的准备状态');
+  await settleUntil(() => document.body.textContent.includes('尚未读取你的云端记录'), '清除后的准备状态');
   await act(async () => pendingRead());
   assert.equal(privateOriginal(), null);
   assert.equal(document.querySelector('.home-cloud-entry-list'), null);

@@ -550,19 +550,29 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
 .home-page .home-cloud-analysis li,
 .home-page .home-cloud-entry-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .home-page .home-cloud-original > p:last-child { font-size: 1rem; line-height: 1.95; }
-.home-page .home-cloud-analysis { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--home-line); }
+.home-page .home-cloud-analysis { margin: 0 0 24px; padding: 0; border: 0; }
 .home-page .home-cloud-analysis-text { color: var(--home-ink); line-height: 1.85; margin-bottom: 12px; }
 .home-page .home-cloud-analysis ul { padding-left: 20px; color: var(--home-muted); font-size: 0.9375rem; }
 .home-page .home-cloud-no-analysis,
 .home-page .home-cloud-count { margin: 18px 0 0; color: var(--home-muted); font-size: 0.875rem; line-height: 1.8; }
+/* Day 27：文学引导与记录工具分开展示，保留原始内容。 */
+.home-guidance-source { margin: 0 0 24px; color: #54614f; font-size: 0.8125rem; line-height: 1.8; }
+.home-record-tools { margin-top: 24px; padding-top: 17px; border-top: 1px solid #cfd8c5; }
+.home-record-tools > summary { width: fit-content; max-width: 100%; min-height: 44px; padding: 10px 14px; border: 1px solid #829087; border-radius: 6px; background: transparent; color: var(--home-green); font-size: 0.875rem; line-height: 1.6; cursor: pointer; }
+.home-record-tools > summary:hover { background: #e4ebdd; border-color: var(--home-green); }
+.home-record-tools > summary:focus-visible { outline: 3px solid var(--home-green); outline-offset: 3px; }
+.home-record-status { margin-left: 12px; color: #54614f; font-size: 0.8125rem; }
+.home-record-state { margin-top: 14px; color: #54614f; font-size: 0.875rem; line-height: 1.8; }
+.home-record-state > p:last-child { margin-bottom: 0; }
 .home-page .home-cloud-refresh { margin-top: 18px; }
 .home-page .home-cloud-refresh-note { margin: 10px 0 0; color: var(--home-muted); font-size: 0.8125rem; line-height: 1.8; }
-.home-page .home-cloud-check { margin-top: 30px; padding: 0 26px; border: 1px solid var(--home-line); border-radius: 10px; background: #fffdf7; scroll-margin-top: 24px; }
-.home-page .home-cloud-check > summary { min-height: 64px; padding: 18px 0; cursor: pointer; font-weight: 600; color: var(--home-ink); }
-.home-page .home-cloud-health-badge { display: inline-block; margin-left: 16px; color: var(--home-green); font-size: 0.8125rem; font-weight: 400; }
+.home-page .home-cloud-check { margin-top: 24px; padding: 0; scroll-margin-top: 24px; }
+.home-page .home-cloud-check[open] { padding: 0 26px; border: 1px solid var(--home-line); border-radius: 10px; background: #fffdf7; }
+.home-page .home-cloud-check > summary { width: fit-content; max-width: 100%; min-height: 44px; padding: 10px 14px; border: 1px solid var(--home-line); border-radius: 6px; background: #fffdf7; color: var(--home-green); cursor: pointer; font-size: 0.8125rem; line-height: 1.6; font-weight: 500; }
+.home-page .home-cloud-check > summary:hover { background: #edf1ec; border-color: var(--home-green); }
 .home-page .home-cloud-check > summary:focus-visible,
 .home-page .home-cloud-returned > summary:focus-visible { outline: 3px solid var(--home-green); outline-offset: 3px; }
-.home-page .home-cloud-check[open] > summary { border-bottom: 1px solid var(--home-line); }
+.home-page .home-cloud-check[open] > summary { margin: 16px 0; }
 .home-page .home-cloud-check-intro { margin: 20px 0 24px; max-width: 800px; color: var(--home-muted); font-size: 0.9375rem; line-height: 1.85; }
 .home-page .home-cloud-check-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
 .home-page .home-cloud-check section { min-width: 0; }
@@ -611,21 +621,18 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
 .home-page .home-cloud-write-success { border-color: #c5d2bb; background: #edf1e7; color: #365b43; }
 
 @media (max-width: 700px) {
-  .home-page .home-cloud-check { padding: 0 20px; }
+  .home-page .home-cloud-check[open] { padding: 0 20px; }
   .home-page .home-cloud-check-grid { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .home-page .home-cloud-check-grid > section + section { border-top: 1px solid var(--home-line); padding-top: 24px; }
-  .home-page .home-cloud-health-badge { display: block; margin: 6px 0 0 18px; }
 }
 
 @media (max-width: 450px) {
-  .home-page .home-cloud-check { padding: 0 16px; }
+  .home-page .home-cloud-check[open] { padding: 0 16px; }
   .home-page .home-cloud-addresses { grid-template-columns: minmax(0, 1fr); gap: 3px; }
   .home-page .home-cloud-addresses dd { margin-bottom: 8px; }
   .home-page .home-cloud-actions { flex-direction: column; align-items: stretch; }
   .home-page .home-cloud-entry-list li { padding: 14px; }
 }
-.home-page .home-cloud-open { padding: 6px 0; border: 0; border-radius: 0; background: transparent; text-decoration: underline; }
-.home-page .home-cloud-open:hover { background: transparent; }
 /* Day 20 仅本地测试登录入口，复用检查台表单样式。 */
 .home-page .home-cloud-dev-login { padding-bottom: 24px; margin-bottom: 24px; border-bottom: 1px solid var(--home-line); }
 .home-page .home-cloud-dev-login h4 { margin: 0 0 10px; color: var(--home-green); font-size: 1rem; }

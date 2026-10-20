@@ -47,7 +47,6 @@ export default function HomePage() {
     }
   }, [apiOrigin]);
   const publicOrigin = apiOrigin.replace(/\/$/, '');
-  const checkDetails = useRef(null);
   const tokenRef = useRef('');
   const sessionVersion = useRef(0);
   const readController = useRef(null);
@@ -152,15 +151,6 @@ export default function HomePage() {
       loginController.current?.abort();
     };
   }, []);
-
-  function revealCheck(event) {
-    event.preventDefault();
-    if (checkDetails.current) {
-      checkDetails.current.open = true;
-      checkDetails.current.querySelector('summary')?.focus();
-      checkDetails.current.scrollIntoView({ block: 'start' });
-    }
-  }
 
   function clearDeleteConfirmation() {
     // 同步作废旧按钮持有的确认，避免取消或切换会话后的迟到操作误删。
@@ -545,45 +535,44 @@ export default function HomePage() {
         <section className="home-state-card" aria-labelledby="home-state-title">
           <div className="home-card-heading">
             <p className="home-section-label">一页近况</p>
-            <span className="home-demo-label">云端记录</span>
+            <span className="home-demo-label">{latest ? '云端记录' : '写给此刻'}</span>
           </div>
           <h2 id="home-state-title">此刻的自我</h2>
           <div className="home-state-body" aria-live="polite" aria-busy={reading}>
-            {view.status === 'loading' && <div className="home-state-message">
-              <p className="home-state-heading" role="status">正在读取云端记录…</p>
-              <p>从公网接口读取数据库中的原文与日期。</p>
-              <div className="home-skeleton" aria-hidden="true"><span /><span /><span /></div>
+            {completeAnalysis && latest ? <div className="home-cloud-analysis">
+              <p className="home-summary-label">AI 解读 · 已采纳，独立于用户原文</p>
+              <p className="home-summary">{analysis.summary}</p>
+              <ul>{analysis.questions.map((question, index) => <li key={index}>{question}</li>)}</ul>
+            </div> : <div className="home-guidance" aria-label="本站原创寄语">
+              <p className="home-summary">把此刻写下来，<br />让文字慢慢照见自己。</p>
+              <p className="home-summary-detail">有些心绪，还没有名字。先留下一段经历，再让阅读陪你慢慢辨认。</p>
+              <p className="home-guidance-source">本站原创寄语</p>
             </div>}
-            {view.status === 'content' && latest && <>
-              <div className="home-original home-cloud-original">
-                <p className="home-original-label">用户原文 · <time dateTime={latest.entryDate}>{latest.entryDate}</time></p>
-                <p>{latest.text}</p>
-              </div>
-              {completeAnalysis ? <div className="home-cloud-analysis">
-                <p className="home-summary-label">AI 解读 · 已采纳，独立于用户原文</p>
-                <p className="home-cloud-analysis-text">{analysis.summary}</p>
-                <ul>{analysis.questions.map((question, index) => <li key={index}>{question}</li>)}</ul>
-              </div> : <p className="home-cloud-no-analysis">{analysis ? '采纳分析字段不完整，暂未展示；请核对接口。原文保持不变。' : '这条记录暂无已采纳的 AI 分析。原文按数据库内容保留。'}</p>}
-              <p className="home-cloud-count">已读 {view.items.length} 条 / 共 {view.total} 条</p>
-            </>}
-            {view.status === 'empty' && <div className="home-state-message">
-              <p className="home-state-heading">你的云端记录还没有内容</p>
-              <p>接口已成功返回空列表。可在下方检查台写入一条明确标注的虚构测试记录，再核对读回结果。</p>
-            </div>}
-            {view.status === 'unauthorized' && <div className="home-state-message">
-              <p className="home-state-heading">先准备云端读取凭证</p>
-              <p>{view.error || '云端记录属于私人数据，需要已有会话中的短期 access_token。'}</p>
-              <button type="button" className="home-state-link home-cloud-open" onClick={revealCheck}>展开下方检查台 <span aria-hidden="true">↓</span></button>
-            </div>}
-            {view.status === 'error' && <div className="home-state-message home-state-error" role="alert">
-              <p className="home-state-heading">云端记录暂时没有读到</p>
-              <p>{view.error}</p>
-              <button type="button" onClick={refreshAll} disabled={writeBusy || loginBusy}>重新读取</button>
+            {view.status === 'content' && latest && <div className="home-original home-cloud-original">
+              <p className="home-original-label">用户原文 · <time dateTime={latest.entryDate}>{latest.entryDate}</time></p>
+              <p>{latest.text}</p>
             </div>}
           </div>
-          <p className="home-state-note">这里展示数据库中的最新记录；标有“虚构”的记录是验证数据。AI 解读与原文分别显示。</p>
-          <button className="home-cloud-refresh" type="button" onClick={refreshAll} disabled={reading || writeBusy || loginBusy}>刷新状态与云端记录</button>
-          <p className="home-cloud-refresh-note">此按钮保留页内凭证；浏览器刷新或离开首页后需重新填写凭证。</p>
+          <details className="home-record-tools" id="home-record-tools">
+            <summary>记录与刷新<span className="home-record-status" aria-live="polite">{reading ? '读取中' : view.status === 'content' ? '已连接' : view.status === 'empty' ? '暂无记录' : view.status === 'unauthorized' ? '未连接' : '读取失败'}</span></summary>
+            <p className="home-state-note">这里保留你保存的原文与日期，AI 解读单独标注。</p>
+            <div className="home-record-state" aria-live="polite">
+              {view.status === 'loading' && <p role="status">正在读取云端记录…</p>}
+              {view.status === 'empty' && <p>你的云端记录还没有内容。这里会显示你保存的日精进原文与日期。</p>}
+              {view.status === 'unauthorized' && <p>尚未读取你的云端记录。目前没有有效的登录状态，私人记录暂不展示。</p>}
+              {view.status === 'error' && <div className="home-state-error" role="alert">
+                <p>云端记录暂时没有读到</p>
+                <p>{view.error}</p>
+                <button type="button" onClick={refreshAll} disabled={writeBusy || loginBusy}>重新读取</button>
+              </div>}
+              {view.status === 'content' && latest && <>
+                {!completeAnalysis && <p className="home-cloud-no-analysis">{analysis ? '这条记录的分析暂时无法完整展示，已保存的原文保持不变。' : '这条记录暂无已采纳的 AI 分析。原文按数据库内容保留。'}</p>}
+                <p className="home-cloud-count">已读 {view.items.length} 条 / 共 {view.total} 条</p>
+              </>}
+            </div>
+            <button className="home-cloud-refresh" type="button" onClick={refreshAll} disabled={reading || writeBusy || loginBusy}>刷新状态与云端记录</button>
+            <p className="home-cloud-refresh-note">刷新此处会重新读取记录；整页刷新或离开首页后，需要重新验证登录状态。</p>
+          </details>
         </section>
 
         <section className="home-choices" aria-labelledby="home-choices-title">
@@ -614,8 +603,37 @@ export default function HomePage() {
         </section>
       </div>
 
-      <details className="home-cloud-check" id="home-cloud-check" ref={checkDetails}>
-        <summary><span>公网接线检查台</span><span className="home-cloud-health-badge">{health.status === 'success' ? '健康接口可用' : health.status === 'loading' ? '正在检查健康接口' : '健康接口待排查'}</span></summary>
+      <aside className="home-letter" aria-labelledby="home-letter-title">
+        <div className="home-letter-heading">
+          <span className="home-letter-mark" aria-hidden="true">予</span>
+          <h2 id="home-letter-title">写在页边</h2>
+          <span>我们的初心与祝愿</span>
+        </div>
+        <div className="home-letter-copy">
+          <p>理解自己，或许始于允许一个问题暂时没有答案。</p>
+          <p>我们想留下一处空间，让经历被认真记录，让阅读与生活相互照见。<br className="home-letter-break" />愿你在文字间获得片刻从容，带着对自己的善意，继续走向生活。</p>
+        </div>
+        <span className="home-letter-source">本站原创寄语</span>
+      </aside>
+
+      <dialog ref={deleteDialog} aria-labelledby="cloud-delete-confirm-title" aria-describedby="cloud-delete-warning" onCancel={cancelDelete}>
+        {deleteConfirmation && <>
+          <h2 id="cloud-delete-confirm-title">确认删除这条云端记录？</h2>
+          <p>日期：{deleteConfirmation.entry.entryDate} · 记录版本：{deleteConfirmation.entry.revision}</p>
+          <p className="delete-preview">记录 ID：{deleteConfirmation.entry.id}</p>
+          <p className="delete-preview">原文预览：{Array.from(deleteConfirmation.entry.text).slice(0, 160).join('')}</p>
+          <p id="cloud-delete-warning">这是永久删除，记录及其关联收藏将被清理；阅读感悟原文保留。</p>
+          <div className="dialog-actions">
+            <button ref={cancelDeleteButton} type="button" autoFocus onClick={cancelDelete}>取消删除</button>
+            <button type="button" className="danger-button" onClick={() => mutateEntry('DELETE', undefined, deleteConfirmation)} disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt)}>确认永久删除</button>
+          </div>
+        </>}
+      </dialog>
+
+      <p className="home-storage-note">首页近况和检查台读取云端数据；两个入口内的日精进、感悟、收藏与固定演示仍沿用原有本地流程。未自动导入本机记录。</p>
+
+      <details className="home-cloud-check" id="home-cloud-check">
+        <summary>公网接线检查台</summary>
         <p className="home-cloud-check-intro">核对接口、私人记录及增删改查。已有凭证只保存在本页内存，不进入环境变量、浏览器存储或链接。</p>
         <div className="home-cloud-check-grid">
           <section aria-labelledby="cloud-health-title">
@@ -748,35 +766,6 @@ export default function HomePage() {
           </div>}
         </section>
       </details>
-
-      <aside className="home-letter" aria-labelledby="home-letter-title">
-        <div className="home-letter-heading">
-          <span className="home-letter-mark" aria-hidden="true">予</span>
-          <h2 id="home-letter-title">写在页边</h2>
-          <span>我们的初心与祝愿</span>
-        </div>
-        <div className="home-letter-copy">
-          <p>理解自己，或许始于允许一个问题暂时没有答案。</p>
-          <p>我们想留下一处空间，让经历被认真记录，让阅读与生活相互照见。<br className="home-letter-break" />愿你在文字间获得片刻从容，带着对自己的善意，继续走向生活。</p>
-        </div>
-        <span className="home-letter-source">本站原创寄语</span>
-      </aside>
-
-      <dialog ref={deleteDialog} aria-labelledby="cloud-delete-confirm-title" aria-describedby="cloud-delete-warning" onCancel={cancelDelete}>
-        {deleteConfirmation && <>
-          <h2 id="cloud-delete-confirm-title">确认删除这条云端记录？</h2>
-          <p>日期：{deleteConfirmation.entry.entryDate} · 记录版本：{deleteConfirmation.entry.revision}</p>
-          <p className="delete-preview">记录 ID：{deleteConfirmation.entry.id}</p>
-          <p className="delete-preview">原文预览：{Array.from(deleteConfirmation.entry.text).slice(0, 160).join('')}</p>
-          <p id="cloud-delete-warning">这是永久删除，记录及其关联收藏将被清理；阅读感悟原文保留。</p>
-          <div className="dialog-actions">
-            <button ref={cancelDeleteButton} type="button" autoFocus onClick={cancelDelete}>取消删除</button>
-            <button type="button" className="danger-button" onClick={() => mutateEntry('DELETE', undefined, deleteConfirmation)} disabled={writeBusy || loginBusy || reading || Boolean(mutationReceipt)}>确认永久删除</button>
-          </div>
-        </>}
-      </dialog>
-
-      <p className="home-storage-note">首页近况和检查台读取云端数据；两个入口内的日精进、感悟、收藏与固定演示仍沿用原有本地流程。未自动导入本机记录。</p>
     </div>
   );
 }

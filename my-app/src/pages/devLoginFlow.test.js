@@ -103,7 +103,7 @@ beforeEach(async () => {
   root = createRoot(document.getElementById('root'));
   await act(async () => root.render(React.createElement(HomePage)));
   await settleUntil(() => document.body.textContent.includes('健康接口正常')
-    && document.body.textContent.includes('先准备云端读取凭证'), '初始准备状态');
+    && document.body.textContent.includes('尚未读取你的云端记录'), '初始准备状态');
 });
 
 afterEach(async () => {
@@ -259,7 +259,7 @@ test('pagehide清除已读数据与登录输入，迟到登录不能恢复且同
   assert.equal(document.getElementById('cloud-access-token').value, '');
   assert.ok(!document.body.textContent.includes('测试 UID 一致：true'));
   await act(async () => button('刷新状态与云端记录').click());
-  await settleUntil(() => document.body.textContent.includes('先准备云端读取凭证'), '返回页面刷新仍无凭证');
+  await settleUntil(() => document.body.textContent.includes('尚未读取你的云端记录'), '返回页面刷新仍无凭证');
   assert.equal(requests('/api/entries?limit=20').length, firstReadCount, 'pagehide清token后不再带凭证读库');
 
   mode = 'pending-login';
