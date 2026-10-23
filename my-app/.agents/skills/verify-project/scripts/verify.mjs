@@ -42,7 +42,15 @@ const ipv6SpecialRules = [
   return { bits, globallyReachable, range };
 }).sort((left, right) => right.bits - left.bits);
 const PRIVATE_MARKERS = ['CLOUDBASE_APIKEY', 'CURSOR_SECRET', 'CLOUDBASE_SECRET_KEY', 'TENCENTCLOUD_SECRET_KEY'];
-const DEV_MARKERS = ['/__day20-auth/', '/auth/v1/signin', '复制短期凭证', 'DEV登录'];
+// 正式普通账号登录同样使用 /auth/v1/signin；只把项目专有开发代理和调试界面视作DEV泄漏。
+const DEV_MARKERS = ['/__day20-auth/', '复制短期凭证', 'DEV登录'];
+
+export function inspectProductionMarkers(source) {
+  return {
+    devHits: DEV_MARKERS.filter(marker => source.includes(marker)),
+    privateHits: PRIVATE_MARKERS.filter(marker => source.includes(marker)),
+  };
+}
 // 依据现有测试文件的稳定名称核对 spec 的真实通过行，不固定整个项目的测试总数。
 const CRITICAL_TESTS = [
   { id: 'second-page-readback', label: '新增目标在第二页的读回', name: 'Day24 新增目标在第二页时自动读回核对，只读重试不重复 POST' },
@@ -389,6 +397,15 @@ export function selfTest() {
   check(!validateDeniedPreflight({ status: 403, headers }).ok, '403仍带ACAO不能通过');
   check(validateBusinessError({ ok: false, data: null, error: { code: 'FICTIONAL', message: '虚构错误', retryable: false } }), '业务错误封套');
   check(!validateBusinessError({ ok: false, data: null, error: { code: 'FICTIONAL', message: '虚构错误' } }), '错误封套缺retryable');
+  const formalLogin = 'fetch("https://auth.example.com/auth/v1/signin");';
+  check(inspectProductionMarkers(formalLogin).devHits.length === 0
+    && inspectProductionMarkers(formalLogin).privateHits.length === 0, '正式登录路径不等于开发入口');
+  for (const marker of DEV_MARKERS) {
+    check(inspectProductionMarkers(formalLogin + marker).devHits.includes(marker), '正式登录旁仍能识别开发代理或调试界面');
+  }
+  for (const marker of PRIVATE_MARKERS) {
+    check(inspectProductionMarkers(formalLogin + marker).privateHits.includes(marker), '正式登录不能掩盖服务端秘密标记');
+  }
   check(compareVersions({ '/app.js': 'a', '/app.css': 'b' }, { '/app.js': 'a', '/app.css': 'b' }).ok, '版本完全相同');
   check(!compareVersions({ '/app.js': 'a' }, { '/app.js': 'b' }).ok, '相同路径不同内容');
   check(!compareVersions({ '/new.js': 'a' }, { '/old.js': 'a' }).ok, '线上仍是旧资源');
@@ -695,8 +712,7 @@ export async function verifyProject(options) {
         if (item.kind === 'js') mergedJs += body.toString('utf8');
         evidence.push(url.pathname + '：' + body.length + ' 字节；SHA256 ' + digest(body));
       }
-      const devHits = DEV_MARKERS.filter(marker => mergedJs.includes(marker));
-      const privateHits = PRIVATE_MARKERS.filter(marker => mergedJs.includes(marker));
+      const { devHits, privateHits } = inspectProductionMarkers(mergedJs);
       const apiPresent = mergedJs.includes(api.origin);
       evidence.push('预期 API 来源实际包含：' + apiPresent + '；DEV 代理/登录标记：' + devHits.length
         + '；服务端秘密标记：' + privateHits.length);

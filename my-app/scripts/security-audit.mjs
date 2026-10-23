@@ -21,6 +21,66 @@ const envName = (name) => /^\.env(?:\..+)?$/i.test(path.posix.basename(name))
 const sensitiveName = (name) => envName(name)
   || /(?:^|\/)(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/]+\.(?:pem|p12|pfx|key|jks|keystore))$/i.test(name);
 const isTest = (name) => /(?:\.test\.[cm]?[jt]sx?$|(?:^|\/)tests?\/)/i.test(name);
+const digest = (value) => createHash('sha256').update(value).digest('hex');
+// 仅登记已人工核实的注册模拟夹具；文件任何变化都必须重新审阅，不能沿用豁免。
+const reviewedRegistrationFixtures = [{
+  sourceDigest: 'efd7ff9bea568e8189ee8010957534d62cf3fed4eff321ecfeef4a6486be3b0c',
+  valueDigest: '35614a8758a2e3bf5258a759c9f325377f077539a85c4f39abc12bb7e38cc3b5',
+}];
+// 这三个短小会话样例已核实分别含空格、换行和NUL；未知字面值仍须告警。
+const reviewedInvalidSessionDigests = new Set([
+  '3331faf3e1312b4c2f265077d3025e0091f97d52316e8f4cf359d7ab17d35101',
+  '09e99017cf182695d02a5310032b4ed8882ced33adb7efde81873ca7eda6874f',
+  '9017a16f4fc1f0b9c1915ef34f41cdb9b123441b99e85b6943deacaac6881483',
+]);
+
+function enclosingTest(text, offset) {
+  const starts = [...text.matchAll(/(?:^|\n)\s*test\s*\(/g)].map(hit => hit.index);
+  const start = starts.findLast(index => index <= offset);
+  return start === undefined ? '' : text.slice(start, starts.find(index => index > offset) ?? text.length);
+}
+
+function decodeLiteral(value) {
+  // 只解码转义字符，不执行源码；双重转义的反斜线不会被误当换行。
+  const simple = { '0': '\0', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', "'": "'", '"': '"', '`': '`' };
+  return value.replace(/\\(?:u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|([0bfnrtv\\'"`]))/g,
+    (_match, unicode, hex, escape) => unicode || hex ? String.fromCharCode(parseInt(unicode || hex, 16)) : simple[escape]);
+}
+
+function contextualReason(text, hit, names, reviewedFixtures, reviewedSessions) {
+  const key = hit[1].toLowerCase();
+  if (key === 'password' && hit[3] === 'current-password') {
+    // 旧正则会从 new-password 的中间开始匹配，再把三元分支误作密码赋值。
+    for (const attribute of text.matchAll(/\bautoComplete\s*=\s*\{\s*[A-Za-z_$][\w.$]*\s*\?\s*(['"])new-password\1\s*:\s*(['"])current-password\2\s*\}/g)) {
+      if (hit.index === attribute.index + attribute[0].indexOf('new-password') + 4) {
+        return '密码输入框自动填充属性的固定语法，不是凭证赋值';
+      }
+    }
+  }
+  if (!names.length || !names.every(isTest)) return null;
+  const block = enclosingTest(text, hit.index);
+  if (key === 'access_token' && /for\s*\(\s*const\s+session\s+of\s*\[/.test(block)
+      && /setup\s*\(\s*\{\s*session\s*\}\s*\)/.test(block)
+      && /assert\.rejects\s*\(\s*run\s*\(\s*\)/.test(block)) {
+    const value = decodeLiteral(hit[3]);
+    const repeat = /^\s*\.repeat\(\s*(\d{1,8})\s*\)/.exec(text.slice(hit.index + hit[0].length));
+    if ((reviewedSessions.has(digest(hit[3])) && /[\s\u0000-\u001f\u007f]/.test(value))
+        || (value.length === 1 && repeat && Number(repeat[1]) > 8192)) {
+      return '拒绝会话的模拟测试中，已核实的禁止字符样例或单字符重复超过接口上限';
+    }
+  }
+  if (key !== 'password' || !reviewedFixtures.some(item => item.valueDigest === digest(hit[3])
+      && item.sourceDigest === digest(text.replace(/\r\n/g, '\n')))) return null;
+  const line = text.slice(text.lastIndexOf('\n', hit.index) + 1, text.indexOf('\n', hit.index) < 0 ? text.length : text.indexOf('\n', hit.index));
+  const fixtureDefinition = /^\s*const\s+INPUT\s*=\s*\{\s*username\s*:\s*(['"])[^'"\r\n]+\1\s*,\s*password\s*:/.test(line);
+  const rejectedJson = /\bJSON\.parse\s*\(/.test(line)
+    && /for\s*\(\s*const\s+input\s+of\s*\[/.test(block)
+    && /assert\.throws\s*\(\s*\(\s*\)\s*=>\s*validateInput\s*\(\s*input\s*\)/.test(block);
+  if ((fixtureDefinition || rejectedJson) && /\bcreateUser\s*:\s*async\s*\(\s*\)\s*=>\s*success\s*\(\s*\)/.test(text)) {
+    return '源码与值的摘要均匹配已人工核实的固定注册夹具，且账号创建被显式模拟';
+  }
+  return null;
+}
 
 function fakeReason(value, key, context, names) {
   // 只按明确的字面值标记分类；测试目录本身不会获得豁免。
@@ -35,7 +95,7 @@ function fakeReason(value, key, context, names) {
   }
   return null;
 }
-function inspect(text, names) {
+function inspect(text, names, reviewedFixtures = reviewedRegistrationFixtures, reviewedSessions = reviewedInvalidSessionDigests) {
   const findings = [];
   const add = (offset, rule, reason) => findings.push({
     line: text.slice(0, offset).split('\n').length, rule, reason,
@@ -51,7 +111,8 @@ function inspect(text, names) {
     // 通用 token 名也用于解析器中的单字符语法符号。
     if (hit[1].toLowerCase() === 'token' && /^[^\w\s]$/.test(hit[3])) continue;
     const context = text.slice(Math.max(0, hit.index - 180), hit.index + hit[0].length + 180);
-    add(hit.index, '凭证字符串赋值', fakeReason(hit[3], hit[1], context, names));
+    add(hit.index, '凭证字符串赋值', fakeReason(hit[3], hit[1], context, names)
+      || contextualReason(text, hit, names, reviewedFixtures, reviewedSessions));
   }
   return findings;
 }
@@ -143,6 +204,51 @@ function selfTest() {
     + '100644 ' + stagedId + ' 0\tother/a.js\0'), 'my-app');
   check(scopedIndex.size === 1 && [...scopedIndex.values()][0].size === 1
     && [...scopedIndex.values()][0].has('my-app/a.js'));
+  const allClassified = (text, names = ['tests/示例.test.js'], fixtures, sessions) => {
+    const items = inspect(text, names, fixtures, sessions);
+    return items.length > 0 && items.every(item => item.reason);
+  };
+  const pending = (text, names = ['tests/示例.test.js'], fixtures, sessions) => inspect(text, names, fixtures, sessions).some(item => !item.reason);
+  const autocomplete = '<input value={password} autoComplete={isRegister ? \'new-password\' : \'current-password\'} />';
+  check(allClassified(autocomplete, ['src/AccountPanel.jsx']));
+  check(pending(source('password', ['current', 'password'].join('-')), ['src/示例.js']));
+  check(pending(autocomplete.replace('current-password', 'z'.repeat(25)), ['src/AccountPanel.jsx']));
+  const rejectedSession = value => `test('拒绝无效会话', async () => {\nfor (const session of [{access_token: ${value}}]) {\nconst {run} = setup({session});\nawait assert.rejects(run());\n}\n});`;
+  for (const value of ['has space', 'bad\nvalue', 'bad\0value']) {
+    const sessions = new Set([digest(JSON.stringify(value).slice(1, -1))]);
+    check(allClassified(rejectedSession(JSON.stringify(value)), undefined, undefined, sessions));
+    check(pending(rejectedSession(JSON.stringify(value)), ['src/示例.js'], undefined, sessions));
+  }
+  check(allClassified(rejectedSession(JSON.stringify('x') + '.repeat(8193)')));
+  check(pending(rejectedSession(JSON.stringify('x') + '.repeat(8192)')));
+  check(pending(rejectedSession(JSON.stringify('z'.repeat(30)))));
+  check(pending(rejectedSession(JSON.stringify('z'.repeat(30) + ' '))));
+  const doubleEscaped = JSON.stringify('bad\\nvalue');
+  check(pending(rejectedSession(doubleEscaped), undefined, undefined, new Set([digest(doubleEscaped.slice(1, -1))])));
+  check(pending(source('access_token', 'bad value')));
+  const structuredSession = JSON.stringify(token + '\n');
+  check(pending(rejectedSession(structuredSession), undefined, undefined, new Set([digest(structuredSession.slice(1, -1))])));
+  const fixtureValue = ['Abc', '@', '123456'].join('');
+  const fixtureSource = `const INPUT = {username: 'fictional-user', password: ${JSON.stringify(fixtureValue)}};\nconst fixture = () => createRegistrar({createUser: async () => success()});\n`;
+  const reviewed = [{ sourceDigest: digest(fixtureSource), valueDigest: digest(fixtureValue) }];
+  check(allClassified(fixtureSource, undefined, reviewed));
+  check(pending(fixtureSource, ['src/示例.js'], reviewed));
+  check(pending(fixtureSource, ['tests/示例.test.js', 'src/示例.js'], reviewed));
+  check(pending(fixtureSource, undefined, []));
+  check(pending(fixtureSource.replace(fixtureValue, 'z'.repeat(25)), undefined, reviewed));
+  check(pending(fixtureSource + '\nfetch(endpoint, {body: JSON.stringify(INPUT)});', undefined, reviewed));
+  check(pending(fixtureSource.replace('createUser: async () => success()', 'createUser: createActualUser'), undefined, reviewed));
+  const jsonInput = JSON.stringify({ username: 'valid', password: fixtureValue });
+  const rejectedSource = fixtureSource + `test('拒绝非法输入', () => {\nfor (const input of [JSON.parse('${jsonInput}')]) {\nassert.throws(() => validateInput(input));\n}\n});`;
+  const reviewedJson = [{ sourceDigest: digest(rejectedSource), valueDigest: digest(fixtureValue) }];
+  check(allClassified(rejectedSource, undefined, reviewedJson));
+  check(pending(rejectedSource.replace('assert.throws(() => validateInput(input))', 'sendActual(input)'), undefined, reviewedJson));
+  check(pending(source('password', fixtureValue)));
+  for (const dangerous of [structured, token, privateHeader]) {
+    const dangerousSource = fixtureSource.replace(fixtureValue, dangerous);
+    const claimedReview = [{ sourceDigest: digest(dangerousSource), valueDigest: digest(dangerous) }];
+    check(pending(dangerousSource, undefined, claimedReview));
+  }
   console.log(`安全扫描内存自测：${count} 项通过；仅使用运行时拼接的虚构数据。`);
 }
 
