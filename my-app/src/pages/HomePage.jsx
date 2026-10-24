@@ -3,6 +3,10 @@ import { homeSections } from '../services/homeMock.js';
 import { createPublicApiClient } from '../services/publicApi.js';
 import { createAccountAuthClient } from '../services/accountAuth.js';
 import AccountPanel from '../components/AccountPanel.jsx';
+import { useDetailsMotion } from '../components/usePanelMotion.js';
+import antiqueMap from '../assets/home/antique-map.webp';
+import journalBrush from '../assets/home/journal-brush.webp';
+import readingBooks from '../assets/home/reading-books.webp';
 
 const updateFormatter = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -40,6 +44,7 @@ function RequestEvidence({ value }) {
 }
 
 export default function HomePage() {
+  const recordMotion = useDetailsMotion();
   const apiOrigin = import.meta.env.VITE_API_ORIGIN || '';
   const apiSetup = useMemo(() => {
     try {
@@ -629,12 +634,7 @@ export default function HomePage() {
           <h1 id="home-title">文学与内心冲突</h1>
           <p className="home-intro-text">记录生活的褶皱，在文学、哲学与人文社科中，寻找理解自己的另一种目光。</p>
         </div>
-        <div className="home-update">
-          <span>云端记录更新时间</span>
-          {latest ? <time dateTime={latest.updatedAt} title={latest.updatedAt}>{formatTime(latest.updatedAt)}</time>
-            : <span>{view.status === 'loading' ? '正在读取…' : view.status === 'empty' ? '暂无云端记录' : '等待读取云端记录'}</span>}
-          <span>北京时间 · 数据库 entries</span>
-        </div>
+
       </section>
 
       <AccountPanel state={accountState} disabled={writeBusy || loginBusy}
@@ -642,12 +642,13 @@ export default function HomePage() {
         onSubmit={authenticateAccount} onCancel={clearCredential} onLogout={clearCredential} />
 
       <div className="home-workspace">
-        <section className="home-state-card" aria-labelledby="home-state-title">
+        <section className={`home-state-card${!latest ? ' home-state-empty' : ''}`} aria-labelledby="home-state-title">
           <div className="home-card-heading">
             <p className="home-section-label">一页近况</p>
             <span className="home-demo-label">{latest ? '云端记录' : '写给此刻'}</span>
           </div>
           <h2 id="home-state-title">此刻的自我</h2>
+          {!latest && <img className="home-map" src={antiqueMap} alt="" aria-hidden="true" decoding="async" />}
           <div className="home-state-body" aria-live="polite" aria-busy={reading}>
             {completeAnalysis && latest ? <div className="home-cloud-analysis">
               <p className="home-summary-label">AI 解读 · 已采纳，独立于用户原文</p>
@@ -663,31 +664,38 @@ export default function HomePage() {
               <p>{latest.text}</p>
             </div>}
           </div>
-          <details className="home-record-tools" id="home-record-tools">
+          <details {...recordMotion} className="home-record-tools" id="home-record-tools">
             <summary>记录与刷新<span className="home-record-status" aria-live="polite">{reading ? '读取中' : view.status === 'content' ? '已连接' : view.status === 'empty' ? '暂无记录' : view.status === 'unauthorized' ? '未连接' : '读取失败'}</span></summary>
-            <p className="home-state-note">这里保留你保存的原文与日期，AI 解读单独标注。</p>
-            <div className="home-record-state" aria-live="polite">
-              {view.status === 'loading' && <p role="status">正在读取云端记录…</p>}
-              {view.status === 'empty' && <p>你的云端记录还没有内容。这里会显示你保存的日精进原文与日期。</p>}
-              {view.status === 'unauthorized' && <p>尚未读取你的云端记录。目前没有有效的登录状态，私人记录暂不展示。</p>}
-              {view.status === 'error' && <div className="home-state-error" role="alert">
-                <p>云端记录暂时没有读到</p>
-                <p>{view.error}</p>
-                <button type="button" onClick={refreshAll} disabled={writeBusy || loginBusy}>重新读取</button>
-              </div>}
-              {view.status === 'content' && latest && <>
-                {!completeAnalysis && <p className="home-cloud-no-analysis">{analysis ? '这条记录的分析暂时无法完整展示，已保存的原文保持不变。' : '这条记录暂无已采纳的 AI 分析。原文按数据库内容保留。'}</p>}
-                <p className="home-cloud-count">已读 {view.items.length} 条 / 共 {view.total} 条</p>
-              </>}
+            <div className="home-record-content">
+              <p className="home-state-note">这里保留你保存的原文与日期，AI 解读单独标注。</p>
+              <div className="home-update">
+                <span>云端记录更新时间</span>
+                {latest ? <time dateTime={latest.updatedAt} title={latest.updatedAt}>{formatTime(latest.updatedAt)}</time>
+                  : <span>{view.status === 'loading' ? '正在读取…' : view.status === 'empty' ? '暂无云端记录' : '等待读取云端记录'}</span>}
+                <span>北京时间 · 数据库 entries</span>
+              </div>
+              <div className="home-record-state" aria-live="polite">
+                {view.status === 'loading' && <p role="status">正在读取云端记录…</p>}
+                {view.status === 'empty' && <p>你的云端记录还没有内容。这里会显示你保存的日精进原文与日期。</p>}
+                {view.status === 'unauthorized' && <p>尚未读取你的云端记录。目前没有有效的登录状态，私人记录暂不展示。</p>}
+                {view.status === 'error' && <div className="home-state-error" role="alert">
+                  <p>云端记录暂时没有读到</p>
+                  <p>{view.error}</p>
+                  <button type="button" onClick={refreshAll} disabled={writeBusy || loginBusy}>重新读取</button>
+                </div>}
+                {view.status === 'content' && latest && <>
+                  {!completeAnalysis && <p className="home-cloud-no-analysis">{analysis ? '这条记录的分析暂时无法完整展示，已保存的原文保持不变。' : '这条记录暂无已采纳的 AI 分析。原文按数据库内容保留。'}</p>}
+                  <p className="home-cloud-count">已读 {view.items.length} 条 / 共 {view.total} 条</p>
+                </>}
+              </div>
+              <button className="home-cloud-refresh" type="button" onClick={refreshAll} disabled={reading || writeBusy || loginBusy}>刷新状态与云端记录</button>
+              <p className="home-cloud-refresh-note">刷新此处会重新读取记录；整页刷新或离开首页后，需要重新验证登录状态。</p>
             </div>
-            <button className="home-cloud-refresh" type="button" onClick={refreshAll} disabled={reading || writeBusy || loginBusy}>刷新状态与云端记录</button>
-            <p className="home-cloud-refresh-note">刷新此处会重新读取记录；整页刷新或离开首页后，需要重新验证登录状态。</p>
           </details>
         </section>
 
         <section className="home-choices" aria-labelledby="home-choices-title">
           <div className="home-choices-heading">
-            <p className="home-section-label">两个入口，一段与自己的对话</p>
             <h2 id="home-choices-title">今天，想从哪里开始？</h2>
             <p>可以先写下此刻，也可以先遇见一本书。</p>
           </div>
@@ -695,18 +703,12 @@ export default function HomePage() {
             {homeSections.map((section) => <a key={section.id}
               className={`home-entry-card home-entry-${section.id}`} href={section.href}
               aria-labelledby={`home-${section.id}-title`}>
-              <div className="home-entry-top" aria-hidden="true">
-                <svg viewBox="0 0 40 40" fill="none" className="home-entry-icon">
-                  {section.iconPaths.map((path) => <path key={path} d={path} />)}
-                </svg>
-                <span>{section.number}</span>
-              </div>
-              <p className="home-entry-caption">{section.caption}</p>
+              <p className="home-entry-top">{section.number}</p>
               <h3 id={`home-${section.id}-title`}>{section.title}</h3>
+              <img className="home-entry-art" src={section.id === 'journal' ? journalBrush : readingBooks}
+                alt="" aria-hidden="true" loading="lazy" decoding="async" />
               <p className="home-entry-description">{section.description}</p>
-              <ul className="home-entry-features" aria-label={`${section.title}板块内容`}>
-                {section.features.map((feature) => <li key={feature}>{feature}</li>)}
-              </ul>
+
               <span className="home-entry-action">{section.action} <span aria-hidden="true">↗</span></span>
             </a>)}
           </nav>
@@ -717,11 +719,10 @@ export default function HomePage() {
         <div className="home-letter-heading">
           <span className="home-letter-mark" aria-hidden="true">予</span>
           <h2 id="home-letter-title">写在页边</h2>
-          <span>我们的初心与祝愿</span>
         </div>
         <div className="home-letter-copy">
           <p>理解自己，或许始于允许一个问题暂时没有答案。</p>
-          <p>我们想留下一处空间，让经历被认真记录，让阅读与生活相互照见。<br className="home-letter-break" />愿你在文字间获得片刻从容，带着对自己的善意，继续走向生活。</p>
+          <p>我们想留下一处空间，让经历被认真记录，让阅读与生活相互照见。</p>
         </div>
         <span className="home-letter-source">本站原创寄语</span>
       </aside>
@@ -740,10 +741,9 @@ export default function HomePage() {
         </>}
       </dialog>
 
-      <p className="home-storage-note">首页近况和检查台读取云端数据；两个入口内的日精进、感悟、收藏与固定演示仍沿用原有本地流程。未自动导入本机记录。</p>
-
       <details className="home-cloud-check" id="home-cloud-check">
         <summary>公网接线检查台</summary>
+        <p className="home-storage-note">首页近况和检查台读取云端数据；两个入口内的日精进、感悟、收藏与固定演示仍沿用原有本地流程。未自动导入本机记录。</p>
         <p className="home-cloud-check-intro">核对接口、私人记录及增删改查。已有凭证只保存在本页内存，不进入环境变量、浏览器存储或链接。</p>
         <div className="home-cloud-check-grid">
           <section aria-labelledby="cloud-health-title">

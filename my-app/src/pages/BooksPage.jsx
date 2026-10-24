@@ -6,6 +6,8 @@ import {
 import { readReadingData } from '../services/localStore.js';
 import { filterPersonalBooks, sortNoteHistory } from '../services/readingModel.js';
 import BookReadingPanel from './BookReadingPanel.jsx';
+import PaperSelect from '../components/PaperSelect.jsx';
+import { useJournalPanelMotion } from '../components/useJournalMotion.js';
 import { createDemoExplanation, explanationKey, hasDemoExplanation } from '../services/explanationDemo.js';
 
 const personalViews = [
@@ -23,6 +25,31 @@ function BookTypes({ book }) {
   );
 }
 
+// 多分类作品固定采用同一封面；只影响外观，不改变作品分类或推荐结果。
+function BookCover({ book }) {
+  const cover = book.categories.includes('philosophy') ? 'philosophy'
+    : book.categories.includes('humanities-social-sciences') ? 'humanities' : 'literature';
+  return (
+    <span className={`book-cover book-cover-${cover}`} aria-hidden="true">
+      <span className="book-cover-label">{book.title}</span>
+      <span className="book-cover-author">{book.author}</span>
+      <span className="book-binding">{[0, 1, 2, 3].map((stitch) => <i key={stitch} />)}</span>
+    </span>
+  );
+}
+
+// 复用已有的自然高度缓动，文字保持原尺寸，纸页随备注和讲解平缓延长。
+function BookReadingLeaf({ children }) {
+  const { ref, contentRef } = useJournalPanelMotion([]);
+  return (
+    <div className="book-leaf book-leaf-reading">
+      <div ref={ref} className="book-reading-height">
+        <div ref={contentRef} className="book-reading-content">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function BooksPage({ path, browse, onBrowseChange, listPosition, detailContext, onDraftChange }) {
   const { category, situationTagId, directionTagId, view, results, errors, notice } = browse;
   const isList = path === '/books';
@@ -30,6 +57,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   const [reading, setReading] = useState({ favorites: [], notes: [], noteHistory: [], status: 'loading' });
   const [favoriteBookIds, setFavoriteBookIds] = useState(() => new Set());
   const [reloadKey, setReloadKey] = useState(0);
+  const [openReadingField, setOpenReadingField] = useState(null);
   const [explanations, setExplanations] = useState({});
   const [explanationError, setExplanationError] = useState(null);
   const temporaryReading = {
@@ -66,6 +94,8 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
     });
     return () => { active = false; };
   }, [path, reloadKey]);
+
+  useEffect(() => { setOpenReadingField(null); }, [path]);
 
   function updateNotes(update) {
     setReading((previous) => {
@@ -115,6 +145,19 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
     heading.current?.focus({ preventScroll: true });
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [path, category, view, results, isList, listPosition, reading.status]);
+
+  useEffect(() => {
+    const element = list.current;
+    const view = element?.ownerDocument.defaultView;
+    if (!isList || !element?.animate || view.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      || element.ownerDocument.documentElement.dataset.pageTransition) return;
+    // 推荐与筛选轻轻显现，保持真实尺寸，返回书单的焦点和滚动仍沿用原逻辑。
+    const animation = element.animate([
+      { opacity: .65, transform: 'translateY(6px)' },
+      { opacity: 1, transform: 'translateY(0)' },
+    ], { duration: 260, easing: 'cubic-bezier(.22, 1, .36, 1)' });
+    return () => animation.cancel();
+  }, [isList, category, view, results]);
 
   function rememberBook(event, id, groupId) {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -166,6 +209,10 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
     const Title = groupId ? 'h4' : 'h3';
     return (
       <article className={`book-card${favoriteBookIds.has(item.id) ? ' is-favorited' : ''}`} key={item.id}>
+        <a className="book-cover-link" href={`#/books/${item.id}`} tabIndex={-1} aria-hidden="true"
+          data-recommendation-group={groupId}
+          onClick={(event) => rememberBook(event, item.id, groupId)}><BookCover book={item} /></a>
+        <div className="book-card-copy">
         <BookTypes book={item} />
         <Title>
           <a href={`#/books/${item.id}`} data-book-key={`${groupId || 'all'}:${item.id}`}
@@ -191,6 +238,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
         <a className="book-open" href={`#/books/${item.id}`} aria-label={`查看《${item.title}》详情`}
           data-recommendation-group={groupId}
           onClick={(event) => rememberBook(event, item.id, groupId)}>查看详情 →</a>
+        </div>
       </article>
     );
   }
@@ -208,67 +256,77 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
 
   if (!isList) {
     return (
-      <div className="books-page">
+      <div className="books-page" data-page-ready={reading.status !== 'loading'}>
         <a className="back-link" href="#/books" onClick={() => {
           if (activeContext) onBrowseChange((previous) => ({ ...previous, view: 'recommendations' }));
         }}>← 返回书单</a>
         {book ? (
-          <article className={`book-detail${favoriteBookIds.has(book.id) ? ' is-favorited' : ''}`} aria-labelledby="book-title">
-            <p className="eyebrow">作品详情</p>
-            <h2 id="book-title" ref={heading} tabIndex={-1}>{book.title}</h2>
-            <p className="book-author">作者／编纂：{book.author}</p>
-            <BookTypes book={book} />
-            {activeContext && (
-              <section className="match-reason" aria-label="本次推荐理由">
-                <h3>{activeContext.groupTitle}</h3>
-                <p className="scope-note">本次处境：{results.situationLabel}；改变方向：{results.directionLabel}；作品类型：{categoryLabel(results.conditions.category)}。</p>
-                <p>{activeContext.baseReason}</p>
-              </section>
-            )}
-            {activeContext && <section className="demo-explanation" aria-label="本次阅读讲解演示">
-              <h3>阅读讲解 · 固定演示</h3>
-              <p className="scope-note">真实 AI 讲解尚未接入。演示内容依据下方资料和本次选择编写，仅在这次浏览中显示；不读取日精进、收藏或备注。</p>
-              {hasDemoExplanation(book, activeContext) ? (
-                <button type="button" onClick={showDemoExplanation}>
-                  {activeExplanation ? '重新查看固定演示讲解' : '查看固定演示讲解'}
-                </button>
-              ) : <p>这个组合暂没有固定演示讲解。仍可核对上方推荐理由与下方作品资料。</p>}
-              {explanationError?.contextKey === activeExplanationKey && <p className="field-error" role="alert">{explanationError.message}</p>}
-              {activeExplanation && <div className="demo-explanation-result" role="status">
-                <p className="reason-label">固定演示文字，非真实 AI 生成</p>
-                <p>{activeExplanation.explanation}</p>
-                <p><strong>阅读问题：</strong>{activeExplanation.readingQuestion}</p>
-                <a href={book.sources[0].url} target="_blank" rel="noopener noreferrer">
-                  核对《{book.title}》资料来源（新标签页） ↗
-                </a>
-              </div>}
-            </section>}
-            <h3>作品简介</h3>
-            <p>{book.intro}</p>
-            <h3>作品涉及的主题</h3>
-            <ul>{book.topics.map((topic) => <li key={topic}>{topic}</li>)}</ul>
-            <h3>资料来源</h3>
-            <ul className="book-sources">
-              {book.sources.map((source) => (
-                <li key={source.url}>
-                  <a href={source.url} target="_blank" rel="noopener noreferrer">
-                    {source.name}（新标签页）
+          <article className={`book-detail ancient-book${favoriteBookIds.has(book.id) ? ' is-favorited' : ''}`} aria-labelledby="book-title">
+            <div className="book-leaf book-leaf-info">
+              <header className="book-title-block">
+              <h1 id="book-title" ref={heading} tabIndex={-1}>{book.title}</h1>
+              <p className="book-author">作者／编纂：{book.author}</p>
+              <BookTypes book={book} />
+              </header>
+              <h2>作品简介</h2>
+              <p>{book.intro}</p>
+              <h2>作品涉及的主题</h2>
+              <ul className="book-topics">{book.topics.map((topic) => <li key={topic}>{topic}</li>)}</ul>
+              <h2>资料来源</h2>
+              <ul className="book-sources">
+                {book.sources.map((source) => (
+                  <li key={source.url}>
+                    <a href={source.url} target="_blank" rel="noopener noreferrer">
+                      {source.name}（新标签页）
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <p className="scope-note">简介、主题与阅读联系由 AI 依据所列资料整理，供你核对；未引用作品原文。推荐只使用你本次选择的条件，不读取日精进原文。</p>
+            </div>
+            <BookReadingLeaf>
+              {activeContext && (
+                <section className="match-reason" aria-label="本次推荐理由">
+                  <h2>{activeContext.groupTitle}</h2>
+                  <dl className="book-context">
+                    <div><dt>本次处境</dt><dd>{results.situationLabel}</dd></div>
+                    <div><dt>改变方向</dt><dd>{results.directionLabel}</dd></div>
+                    <div><dt>作品类型</dt><dd>{categoryLabel(results.conditions.category)}</dd></div>
+                  </dl>
+                  <h2>阅读联系</h2>
+                  <p>{activeContext.baseReason}</p>
+                </section>
+              )}
+              {activeContext && <section className="demo-explanation" aria-label="本次阅读讲解演示">
+                <h2>阅读讲解 · 固定演示</h2>
+                <p className="scope-note">真实 AI 讲解尚未接入。演示内容依据所列资料和本次选择编写，仅在这次浏览中显示；不读取日精进、收藏或备注。</p>
+                {hasDemoExplanation(book, activeContext) ? (
+                  <button type="button" onClick={showDemoExplanation}>
+                    {activeExplanation ? '重新查看固定演示讲解' : '查看固定演示讲解'}
+                  </button>
+                ) : <p>这个组合暂没有固定演示讲解。仍可核对本次推荐理由与作品资料。</p>}
+                {explanationError?.contextKey === activeExplanationKey && <p className="field-error" role="alert">{explanationError.message}</p>}
+                {activeExplanation && <div className="demo-explanation-result" role="status">
+                  <p className="reason-label">固定演示文字，非真实 AI 生成</p>
+                  <p>{activeExplanation.explanation}</p>
+                  <p><strong>阅读问题：</strong>{activeExplanation.readingQuestion}</p>
+                  <a href={book.sources[0].url} target="_blank" rel="noopener noreferrer">
+                    核对《{book.title}》资料来源（新标签页） ↗
                   </a>
-                </li>
-              ))}
-            </ul>
-            <p className="scope-note">简介、主题与阅读联系由 AI 依据所列资料整理，供你核对；未引用作品原文。推荐只使用你本次选择的条件，不读取日精进原文。</p>
-            {readingStatus}
-            {reading.status === 'ready' && <BookReadingPanel key={`${book.id}:${reloadKey}`}
-              book={book} favorite={favoriteBookIds.has(book.id)}
-              notes={reading.noteHistory.filter((item) => item.bookId === book.id)}
-              onFavoriteChange={updateTemporaryFavorite} onNotesChange={updateNotes}
-              onReload={() => setReloadKey((value) => value + 1)}
-              onDraftChange={onDraftChange} />}
+                </div>}
+              </section>}
+              {readingStatus}
+              {reading.status === 'ready' && <BookReadingPanel key={`${book.id}:${reloadKey}`}
+                book={book} favorite={favoriteBookIds.has(book.id)}
+                notes={reading.noteHistory.filter((item) => item.bookId === book.id)}
+                onFavoriteChange={updateTemporaryFavorite} onNotesChange={updateNotes}
+                onReload={() => setReloadKey((value) => value + 1)}
+                onDraftChange={onDraftChange} />}
+            </BookReadingLeaf>
           </article>
         ) : (
-          <div className="book-detail">
-            <h2 ref={heading} tabIndex={-1}>作品暂不可用</h2>
+          <div className="book-detail book-unavailable">
+            <h1 id="book-title" ref={heading} tabIndex={-1}>作品暂不可用</h1>
             <p>没有找到这件作品，或它的资料尚不完整。请返回书单选择作品。</p>
           </div>
         )}
@@ -277,8 +335,10 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   }
 
   return (
-    <div className="books-page">
+    <div className="books-page" data-page-ready={reading.status !== 'loading'}>
       <p>从一件作品开始，了解它关注的生活、思想与社会问题。</p>
+      <div className="books-reading-clues">
+      <div className="books-filter-row">
       <fieldset className="book-filters">
         <legend>书目视图</legend>
         <div className="filter-options">
@@ -300,29 +360,30 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
           ))}
         </div>
       </fieldset>
+      </div>
       <form className="recommendation-form" onSubmit={showRecommendations} noValidate>
         <fieldset>
           <legend>选择本次阅读线索</legend>
           <p className="scope-note" id="selection-help">两项各选一个。选项代表你的本次选择，不会自动从日精进中推断。</p>
           <div className="selection-grid">
             <div>
-              <label htmlFor="situation-tag">当前处境</label>
-              <select id="situation-tag" ref={situationField} value={situationTagId} aria-invalid={Boolean(errors.situation)}
-                aria-describedby={errors.situation ? 'situation-error selection-help' : 'selection-help'}
-                onChange={(event) => changeConditions({ situationTagId: event.target.value })}>
-                <option value="">请选择当前处境</option>
-                {situationTags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}
-              </select>
+              <label id="situation-tag-label" htmlFor="situation-tag">当前处境</label>
+              <PaperSelect id="situation-tag" labelId="situation-tag-label" triggerRef={situationField}
+                value={situationTagId} options={situationTags} placeholder="请选择当前处境"
+                invalid={Boolean(errors.situation)} describedBy={errors.situation ? 'situation-error selection-help' : 'selection-help'}
+                open={openReadingField === 'situation'}
+                onOpenChange={(open) => setOpenReadingField(open ? 'situation' : null)}
+                onChange={(value) => changeConditions({ situationTagId: value })} />
               {errors.situation && <p className="field-error" id="situation-error" role="alert">{errors.situation}</p>}
             </div>
             <div>
-              <label htmlFor="direction-tag">改变方向</label>
-              <select id="direction-tag" ref={directionField} value={directionTagId} aria-invalid={Boolean(errors.direction)}
-                aria-describedby={errors.direction ? 'direction-error selection-help' : 'selection-help'}
-                onChange={(event) => changeConditions({ directionTagId: event.target.value })}>
-                <option value="">请选择改变方向</option>
-                {directionTags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}
-              </select>
+              <label id="direction-tag-label" htmlFor="direction-tag">改变方向</label>
+              <PaperSelect id="direction-tag" labelId="direction-tag-label" triggerRef={directionField}
+                value={directionTagId} options={directionTags} placeholder="请选择改变方向"
+                invalid={Boolean(errors.direction)} describedBy={errors.direction ? 'direction-error selection-help' : 'selection-help'}
+                open={openReadingField === 'direction'}
+                onOpenChange={(open) => setOpenReadingField(open ? 'direction' : null)}
+                onChange={(value) => changeConditions({ directionTagId: value })} />
               {errors.direction && <p className="field-error" id="direction-error" role="alert">{errors.direction}</p>}
             </div>
           </div>
@@ -334,15 +395,17 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
           <p className="scope-note">推荐从符合类型筛选的全部书库中匹配，不受收藏或备注限制。阅读联系是供你核对的建议；不会调用 AI 服务或修改个人记录。</p>
         </fieldset>
       </form>
+      </div>
       {notice && <p className="recommendation-notice" role="status">{notice}</p>}
       {readingStatus}
-      <div ref={list}>
+      <div className={`books-results${view === 'recommendations' ? ' has-recommendations' : ''}`} ref={list}>
         {view === 'recommendations' ? (
           <section aria-labelledby="recommendation-title">
             <h2 id="recommendation-title">两类推荐</h2>
             {results ? (
               <>
                 <p className="recommendation-conditions">本次处境：{results.situationLabel}；改变方向：{results.directionLabel}；作品类型：{categoryLabel(results.conditions.category)}。</p>
+                <div className="recommendation-columns">
                 {results.groups.map((group) => (
                   <section className="recommendation-group" key={group.id} aria-labelledby={`group-${group.id}`}>
                     <h3 id={`group-${group.id}`}>{group.title}</h3>
@@ -354,6 +417,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
                     ) : <p className="empty-recommendations">暂无匹配作品。可以调整当前处境、改变方向或作品类型，再次查看。</p>}
                   </section>
                 ))}
+                </div>
               </>
             ) : <p>请核对上方两项选择和作品类型，再点击“查看两类推荐”。</p>}
           </section>

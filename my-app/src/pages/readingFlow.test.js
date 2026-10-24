@@ -215,7 +215,7 @@ test('虚构页面完整流程：多条留存、草稿保护、持久入库、�
     assert.equal((await readNoteHistory('walden')).length, remaining);
     if (remaining) {
       assert.equal(latestCard().querySelector('.entry-original').textContent, texts[remaining - 1]);
-      assert.equal(document.activeElement, latestCard().querySelector('h4'));
+      assert.equal(document.activeElement, latestCard().querySelector('[id^="note-title-"]'));
     } else assert.equal(document.activeElement.id, 'reading-note');
   }
   assert.equal((await readEntries())[0].text, edited);
@@ -225,12 +225,60 @@ test('虚构页面完整流程：多条留存、草稿保护、持久入库、�
   await click(document.querySelector('.site-nav a[href="#/books"]'));
   await settleUntil(() => document.querySelector('.recommendation-form'), '进入书目推荐表单');
   await click(button('文学'));
-  for (const [id, value] of [['situation-tag', 'rethink-life'], ['direction-tag', 'review-choices']]) {
-    const selection = document.getElementById(id);
+  // 自定义宣纸单选器通过真实键盘事件操作，并验证错误聚焦与取消不会提交。
+  const situation = document.getElementById('situation-tag');
+  const direction = document.getElementById('direction-tag');
+  async function pressSelection(selection, key) {
     await act(async () => {
-      selection.value = value;
-      selection.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      selection.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key, bubbles: true, cancelable: true,
+      }));
     });
+  }
+  await click(button('查看两类推荐'));
+  await settleUntil(() => document.activeElement === situation, '未选择时聚焦当前处境');
+  assert.equal(situation.getAttribute('role'), 'combobox');
+  assert.equal(direction.getAttribute('role'), 'combobox');
+  assert.equal(situation.getAttribute('aria-invalid'), 'true');
+  assert.equal(direction.getAttribute('aria-invalid'), 'true');
+  assert.match(situation.getAttribute('aria-describedby'), /situation-error/);
+  assert.equal(document.querySelectorAll('.recommendation-group').length, 0);
+
+  await pressSelection(situation, 'ArrowDown');
+  assert.equal(situation.getAttribute('aria-expanded'), 'true');
+  assert.equal(situation.getAttribute('aria-activedescendant'), 'situation-tag-option-1');
+  assert.equal(document.getElementById('situation-tag-option-1').getAttribute('aria-selected'), 'false');
+  assert.equal(document.getElementById('situation-tag-value').textContent, '请选择当前处境');
+  await pressSelection(situation, 'Escape');
+  assert.equal(situation.getAttribute('aria-expanded'), 'false');
+  assert.equal(situation.hasAttribute('aria-activedescendant'), false);
+  assert.equal(document.getElementById('situation-tag-value').textContent, '请选择当前处境');
+  assert.equal(situation.getAttribute('aria-invalid'), 'true');
+  assert.equal(document.activeElement, situation);
+
+  for (const [selection, label] of [
+    [situation, '正在重新思考怎样生活'],
+    [direction, '重新审视生活中的重要选择'],
+  ]) {
+    await act(async () => selection.focus());
+    await pressSelection(selection, 'ArrowDown');
+    assert.equal(selection.getAttribute('aria-expanded'), 'true');
+    const option = document.getElementById(selection.getAttribute('aria-activedescendant'));
+    assert.equal(option.getAttribute('role'), 'option');
+    assert.equal(option.textContent, label);
+    await pressSelection(selection, 'Enter');
+    assert.equal(selection.getAttribute('aria-expanded'), 'false');
+    assert.equal(option.getAttribute('aria-selected'), 'true');
+    assert.equal(document.getElementById(selection.id + '-value').textContent, label);
+    assert.equal(document.activeElement, selection);
+    assert.equal(document.querySelectorAll('.recommendation-group').length, 0);
+    if (selection === situation) {
+      await click(button('查看两类推荐'));
+      await settleUntil(() => document.activeElement === direction, '仅缺改变方向时聚焦对应选择器');
+      assert.equal(situation.getAttribute('aria-invalid'), 'false');
+      assert.equal(direction.getAttribute('aria-invalid'), 'true');
+      assert.match(direction.getAttribute('aria-describedby'), /direction-error/);
+    }
   }
   await click(button('查看两类推荐'));
   assert.equal(document.querySelectorAll('.recommendation-group').length, 2);

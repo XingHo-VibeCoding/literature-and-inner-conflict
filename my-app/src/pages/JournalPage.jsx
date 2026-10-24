@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { countCharacters, localToday, validateEntry } from '../../shared/validation.js';
 import { createEntry, deleteEntry, readEntries, updateEntry } from '../services/localStore.js';
 import { sortEntries } from '../services/entryModel.js';
-import { DEMO_ENTRY_TEXT } from '../services/analysisModel.js';
+import { DEMO_ENTRY_TEXT, isDemoEntry } from '../services/analysisModel.js';
 import { runTemporaryFavoriteAction } from '../services/temporaryFavorite.js';
 import AnalysisPanel from './AnalysisPanel.jsx';
+import { useJournalPanelMotion } from '../components/useJournalMotion.js';
 
 const historyStateOptions = [
   { id: 'loading', label: '加载中' },
@@ -55,6 +56,10 @@ export default function JournalPage({ onDraftChange }) {
   const historyErrorMessage = historyPreview === 'error'
     ? '这是一次请求失败演示。这不代表记录为空，也不会清除当前浏览器里已经保存的记录。'
     : readError;
+
+  const recordMotion = useJournalPanelMotion([mode, selectedId, entry?.revision, historyState, entries.length, favoriteFeedback?.message]);
+  const editorMotion = useJournalPanelMotion([mode, selectedId, showJournalWorkspace, errors.entryDate, errors.text]);
+  const feedbackMotion = useJournalPanelMotion([notice, operationError, historyPreview]);
 
   function resetForm(value = { entryDate: localToday(), text: '' }) {
     baseline.current = { entryDate: value.entryDate, text: value.text };
@@ -259,13 +264,166 @@ export default function JournalPage({ onDraftChange }) {
   }
 
   return (
-    <div className="journal">
-      <p className="storage-notice">
-        数据仅保存在当前浏览器；换设备不共享，清理浏览器数据后可能丢失。
-        同一浏览器的使用者可读取这些记录。本步操作均在本地完成，不会发送给 AI。
-        日总结收藏目前只在本次打开页面期间有效，刷新后重置。
-      </p>
-      <p className="scope-note">按日期回看自己的想法与行动。分析目前支持虚构示例的本地演示，真实 AI 尚未接入。</p>
+    <div className="journal" data-page-ready={!loading}>
+      <div className="journal-notes">
+        <p className="journal-mode-note">{!editing && isDemoEntry(entry) ? '虚构示例 · 本地演示' : '本地记录 · 原文保留'}</p>
+        <div>
+          <p className="storage-notice">
+            数据仅保存在当前浏览器；换设备不共享，清理浏览器数据后可能丢失。
+            同一浏览器的使用者可读取这些记录。本步操作均在本地完成，不会发送给 AI。
+            日总结收藏目前只在本次打开页面期间有效，刷新后重置。
+          </p>
+          <p className="scope-note">按日期回看自己的想法与行动。分析目前支持虚构示例的本地演示，真实 AI 尚未接入。</p>
+        </div>
+      </div>
+
+      <div className="journal-feedback" ref={feedbackMotion.ref}>
+        <div className="journal-motion-content" ref={feedbackMotion.contentRef}>
+      {historyPreview === null && notice && <p className="success-message" role="status">{notice}</p>}
+      {historyPreview === null && operationError && <div className="error-panel" role="alert">
+        <p>{operationError}</p>
+        <button type="button" disabled={busy} onClick={() => requestAction({ type: 'reload' })}>重新读取记录</button>
+      </div>}
+
+        </div>
+      </div>
+
+      <div className="journal-workspace">
+        <div className="journal-record-column" ref={recordMotion.ref}>
+          <div className="journal-record-content" ref={recordMotion.contentRef}>
+          <section className="history-section" aria-labelledby="history-title" aria-busy={historyState === 'loading'}>
+            <h2 id="history-title">{visibleHistoryCount === null ? '历史记录' : `历史记录（${visibleHistoryCount} 条）`}</h2>
+            {historyState === 'loading' && <div className="history-state history-state-loading">
+              <p className="history-state-heading" role="status">正在读取历史记录，请稍候……</p>
+              <p>正在查看保存在当前浏览器中的记录。</p>
+              <div className="history-skeleton" aria-hidden="true"><span /><span /><span /></div>
+            </div>}
+            {historyState === 'success' && <>
+              <p className="history-state-summary" role="status">已读取 {entries.length} 条记录。可以选择一条回看，或新建一条日精进。</p>
+              <p className="scope-note">记录日期从新到旧，同一天按创建时间从新到旧。</p>
+              <ol className="history-list">
+                {entries.map((item) => <li key={item.id}>
+                  <button className="history-item" type="button" disabled={busy}
+                    aria-current={selectedId === item.id ? 'true' : undefined}
+                    onClick={() => requestAction({ type: 'select', id: item.id })}>
+                    <time dateTime={item.entryDate}>{item.entryDate}</time>
+                    <span className="history-excerpt">{Array.from(item.text.trim()).slice(0, 64).join('')}{countCharacters(item.text) > 64 ? '…' : ''}</span>
+                    {item.origin?.type === 'reading-note' && <span className="reading-source">
+                      来自《{item.origin.bookTitle}》的阅读备注与感悟
+                    </span>}
+                    <span className="scope-note">{item.adoptedAnalysis?.source === 'demo' ? '有已采纳演示分析' : item.adoptedAnalysis ? '有已采纳分析' : '暂无已采纳分析'}</span>
+                  </button>
+                </li>)}
+              </ol>
+            </>}
+            {historyState === 'empty' && <div className="history-state history-state-empty">
+              <p className="history-state-heading" role="status">记录读取完成，目前还没有保存的日精进。</p>
+              <p>这不是读取失败。可以从一段真实经历或页面提供的虚构示例开始。</p>
+              <div className="record-actions">
+                <button type="button" disabled={!actualHistoryReady} onClick={() => {
+                  setHistoryPreview(null);
+                  requestAction({ type: 'new' });
+                }}>写下第一条日精进</button>
+              </div>
+            </div>}
+            {historyState === 'error' && <div className="error-panel history-state-error" role="alert">
+              <p className="history-state-heading">历史记录暂时没有读到</p>
+              <p>{historyErrorMessage}</p>
+              <button type="button" onClick={() => requestAction({ type: 'reload' })}>重新读取记录</button>
+            </div>}
+            {showJournalWorkspace && <div className="journal-toolbar">
+              <button type="button" disabled={busy} onClick={() => requestAction({ type: 'new' })}>新建日精进</button>
+              <button type="button" disabled={busy} onClick={() => requestAction({ type: 'reload' })}>刷新记录列表</button>
+            </div>}
+          </section>
+
+          {showJournalWorkspace && <>
+            {!editing && entry && <section key={entry.id} className={`saved-entry${entryFavorited ? ' is-favorited' : ''}`} aria-labelledby="saved-title">
+              <h2 id="saved-title">记录详情</h2>
+              <p className="saved-date">记录日期：<time dateTime={entry.entryDate}>{entry.entryDate}</time></p>
+              {entry.origin?.type === 'reading-note' && <p className="reading-source">
+                来自《{entry.origin.bookTitle}》的阅读备注与感悟；原文保存于<time dateTime={entry.origin.noteSavedAt}>
+                  {new Date(entry.origin.noteSavedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+                </time>（北京时间）
+              </p>}
+              <h3>你的原文</h3>
+              <p className="entry-original">{entry.text}</p>
+              <p className="scope-note">创建时间：{new Date(entry.createdAt).toLocaleString('zh-CN')}<br />更新时间：{new Date(entry.updatedAt).toLocaleString('zh-CN')}</p>
+              {entry.adoptedAnalysis && <section className="adopted-analysis"
+                aria-label={entry.adoptedAnalysis.source === 'demo' ? '已采纳的演示分析' : '已采纳的 AI 分析'}>
+                <h3>{entry.adoptedAnalysis.source === 'demo' ? '已采纳的演示分析' : '已采纳的 AI 分析'}</h3>
+                <p>{entry.adoptedAnalysis.source === 'demo'
+                  ? '来自固定虚构测试结果，经你核对或编辑后采纳；非真实 AI 生成，与原文分开展示。'
+                  : 'AI 生成并经你采纳，与原文分开展示。'}</p>
+                <p className="entry-original">{entry.adoptedAnalysis.summary}</p>
+                <ul>{entry.adoptedAnalysis.questions.map((question, index) => <li key={index}>{question}</li>)}</ul>
+                {entry.adoptedAnalysis.adoptedAt && <p className="scope-note">采纳时间：<time dateTime={entry.adoptedAnalysis.adoptedAt}>{new Date(entry.adoptedAnalysis.adoptedAt).toLocaleString('zh-CN')}</time></p>}
+              </section>}
+              <div className="record-actions">
+                <button type="button" className="favorite-button" disabled={busy}
+                  aria-busy={favoriteAction?.entryId === entry.id} aria-pressed={entryFavorited}
+                  aria-label={entryFavorited ? `已收藏 ${entry.entryDate} 的日总结，点击取消收藏` : `收藏 ${entry.entryDate} 的日总结`}
+                  onClick={() => void toggleFavorite(entry)}>
+                  {favoriteAction?.entryId === entry.id
+                    ? favoriteAction.removing ? '取消中…' : '收藏中…'
+                    : entryFavorited ? '已收藏' : '收藏日总结'}
+                </button>
+                <button type="button" disabled={busy} onClick={() => requestAction({ type: 'edit' })}>修改记录</button>
+                <button className="danger-button" type="button" disabled={busy} onClick={() => requestAction({ type: 'delete' })}>删除记录</button>
+                <a href="#/books">从这条记录去选书</a>
+              </div>
+              {favoriteFeedback?.entryId === entry.id && <p
+                className={favoriteFeedback.type === 'error' ? 'error-panel' : 'success-message'}
+                role={favoriteFeedback.type === 'error' ? 'alert' : 'status'}>
+                {favoriteFeedback.message}
+              </p>}
+              {busy && <p role="status">正在处理，请稍候……</p>}
+            </section>}
+          </>}
+          </div>
+        </div>
+        <div className="journal-editor-column" ref={editorMotion.ref}>
+          <div className="journal-motion-content" ref={editorMotion.contentRef}>
+            {showJournalWorkspace && editing && <form className="journal-form" onSubmit={handleSave} noValidate aria-busy={working}>
+              <fieldset disabled={working}>
+                <legend>{mode === 'edit' ? '修改这条日精进' : '写下今天的总结'}</legend>
+                {mode === 'new' && <div className="record-actions">
+                  <button type="button" onClick={() => requestAction({ type: 'fixture' })}>填写虚构示例</button>
+                  <span className="scope-note">仅填入表单，保存后才能载入演示分析。</span>
+                </div>}
+                <label htmlFor="entry-date">记录日期</label>
+                <input id="entry-date" type="date" min="0001-01-01" max={localToday()} value={entryDate}
+                  onChange={(event) => { setEntryDate(event.target.value); setErrors({}); setOperationError(''); }}
+                  aria-invalid={Boolean(errors.entryDate)} aria-describedby={errors.entryDate ? 'date-error' : undefined} />
+                {errors.entryDate && <p className="field-error" id="date-error" role="alert">{errors.entryDate}</p>}
+
+                <label htmlFor="entry-text">日精进原文</label>
+                <textarea id="entry-text" rows={8} value={text}
+                  placeholder="写下今天发生了什么、你的想法，以及实际做出的行动。"
+                  onChange={(event) => { setText(event.target.value); setErrors({}); setOperationError(''); }}
+                  aria-invalid={Boolean(errors.text)} aria-describedby={`text-help character-count${errors.text ? ' text-error' : ''}`} />
+                <div className="input-help">
+                  <p className="scope-note" id="text-help">首尾空白不计入字数；保存时保留原文和换行。</p>
+                  <p className={count > 5000 ? 'field-error' : 'scope-note'} id="character-count">{count} / 5000 字</p>
+                </div>
+                {errors.text && <p className="field-error" id="text-error" role="alert">{errors.text}</p>}
+                <div className="record-actions">
+                  <button className="primary-button" type="submit" disabled={mode === 'edit' && !formDirty}>
+                    {working ? '正在保存，请稍候…' : mode === 'edit' ? '保存修改' : '保存日精进'}
+                  </button>
+                  {entries.length > 0 && <button type="button" onClick={() => requestAction({ type: 'cancel' })}>取消编辑</button>}
+                  {working && <span className="scope-note" role="status">正在将这条日精进保存到当前浏览器，请不要关闭页面。</span>}
+                </div>
+                <p className="scope-note">请先保存原文，再查看分析。真实 AI 尚未接入；演示仅适用于“填写虚构示例”提供的固定原文。</p>
+              </fieldset>
+            </form>}
+        {showJournalWorkspace && !editing && entry && (
+          <AnalysisPanel key={`${entry.id}:${analysisVisit}`} entry={entry} disabled={working} onStateChange={setAnalysisState}
+            onAdopted={(saved) => setEntries((current) => sortEntries(current.map((item) => item.id === saved.id ? saved : item)))} />
+        )}
+          </div>
+        </div>
+      </div>
 
       {import.meta.env.DEV && <details className="history-preview-controls">
         <summary>历史列表状态演示</summary>
@@ -282,139 +440,6 @@ export default function JournalPage({ onDraftChange }) {
         <button type="button" disabled={historyPreview === null} onClick={() => setHistoryPreview(null)}>恢复实际读取状态</button>
         <p className="history-preview-current" role="status">当前显示：{historyStateLabel}；实际读取：{actualHistoryStateLabel}</p>
       </details>}
-
-      {historyPreview === null && notice && <p className="success-message" role="status">{notice}</p>}
-      {historyPreview === null && operationError && <div className="error-panel" role="alert">
-        <p>{operationError}</p>
-        <button type="button" disabled={busy} onClick={() => requestAction({ type: 'reload' })}>重新读取记录</button>
-      </div>}
-
-      {showJournalWorkspace && <div className="journal-toolbar">
-        <button type="button" disabled={busy} onClick={() => requestAction({ type: 'new' })}>新建日精进</button>
-        <button type="button" disabled={busy} onClick={() => requestAction({ type: 'reload' })}>刷新记录列表</button>
-      </div>}
-
-      <section className="history-section" aria-labelledby="history-title" aria-busy={historyState === 'loading'}>
-        <h2 id="history-title">{visibleHistoryCount === null ? '历史记录' : `历史记录（${visibleHistoryCount} 条）`}</h2>
-        {historyState === 'loading' && <div className="history-state history-state-loading">
-          <p className="history-state-heading" role="status">正在读取历史记录，请稍候……</p>
-          <p>正在查看保存在当前浏览器中的记录。</p>
-          <div className="history-skeleton" aria-hidden="true"><span /><span /><span /></div>
-        </div>}
-        {historyState === 'success' && <>
-          <p className="history-state-summary" role="status">已读取 {entries.length} 条记录。可以选择一条回看，或新建一条日精进。</p>
-          <p className="scope-note">记录日期从新到旧，同一天按创建时间从新到旧。</p>
-          <ol className="history-list">
-            {entries.map((item) => <li key={item.id}>
-              <button className="history-item" type="button" disabled={busy}
-                aria-current={selectedId === item.id ? 'true' : undefined}
-                onClick={() => requestAction({ type: 'select', id: item.id })}>
-                <time dateTime={item.entryDate}>{item.entryDate}</time>
-                <span className="history-excerpt">{Array.from(item.text.trim()).slice(0, 64).join('')}{countCharacters(item.text) > 64 ? '…' : ''}</span>
-                {item.origin?.type === 'reading-note' && <span className="reading-source">
-                  来自《{item.origin.bookTitle}》的阅读备注与感悟
-                </span>}
-                <span className="scope-note">{item.adoptedAnalysis?.source === 'demo' ? '有已采纳演示分析' : item.adoptedAnalysis ? '有已采纳分析' : '暂无已采纳分析'}</span>
-              </button>
-            </li>)}
-          </ol>
-        </>}
-        {historyState === 'empty' && <div className="history-state history-state-empty">
-          <p className="history-state-heading" role="status">记录读取完成，目前还没有保存的日精进。</p>
-          <p>这不是读取失败。可以从一段真实经历或页面提供的虚构示例开始。</p>
-          <div className="record-actions">
-            <button type="button" disabled={!actualHistoryReady} onClick={() => {
-              setHistoryPreview(null);
-              requestAction({ type: 'new' });
-            }}>写下第一条日精进</button>
-          </div>
-        </div>}
-        {historyState === 'error' && <div className="error-panel history-state-error" role="alert">
-          <p className="history-state-heading">历史记录暂时没有读到</p>
-          <p>{historyErrorMessage}</p>
-          <button type="button" onClick={() => requestAction({ type: 'reload' })}>重新读取记录</button>
-        </div>}
-      </section>
-
-      {showJournalWorkspace && <>
-        {editing && <form className="journal-form" onSubmit={handleSave} noValidate aria-busy={working}>
-          <fieldset disabled={working}>
-            <legend>{mode === 'edit' ? '修改这条日精进' : '写下今天的总结'}</legend>
-            {mode === 'new' && <div className="record-actions">
-              <button type="button" onClick={() => requestAction({ type: 'fixture' })}>填写虚构示例</button>
-              <span className="scope-note">仅填入表单，保存后才能载入演示分析。</span>
-            </div>}
-            <label htmlFor="entry-date">记录日期</label>
-            <input id="entry-date" type="date" min="0001-01-01" max={localToday()} value={entryDate}
-              onChange={(event) => { setEntryDate(event.target.value); setErrors({}); setOperationError(''); }}
-              aria-invalid={Boolean(errors.entryDate)} aria-describedby={errors.entryDate ? 'date-error' : undefined} />
-            {errors.entryDate && <p className="field-error" id="date-error" role="alert">{errors.entryDate}</p>}
-
-            <label htmlFor="entry-text">日精进原文</label>
-            <textarea id="entry-text" rows={8} value={text}
-              placeholder="写下今天发生了什么、你的想法，以及实际做出的行动。"
-              onChange={(event) => { setText(event.target.value); setErrors({}); setOperationError(''); }}
-              aria-invalid={Boolean(errors.text)} aria-describedby={`text-help character-count${errors.text ? ' text-error' : ''}`} />
-            <div className="input-help">
-              <p className="scope-note" id="text-help">首尾空白不计入字数；保存时保留原文和换行。</p>
-              <p className={count > 5000 ? 'field-error' : 'scope-note'} id="character-count">{count} / 5000 字</p>
-            </div>
-            {errors.text && <p className="field-error" id="text-error" role="alert">{errors.text}</p>}
-            <div className="record-actions">
-              <button className="primary-button" type="submit" disabled={mode === 'edit' && !formDirty}>
-                {working ? '正在保存，请稍候…' : mode === 'edit' ? '保存修改' : '保存日精进'}
-              </button>
-              {entries.length > 0 && <button type="button" onClick={() => requestAction({ type: 'cancel' })}>取消编辑</button>}
-              {working && <span className="scope-note" role="status">正在将这条日精进保存到当前浏览器，请不要关闭页面。</span>}
-            </div>
-            <p className="scope-note">请先保存原文，再查看分析。真实 AI 尚未接入；演示仅适用于“填写虚构示例”提供的固定原文。</p>
-          </fieldset>
-        </form>}
-
-        {!editing && entry && <section className={`saved-entry${entryFavorited ? ' is-favorited' : ''}`} aria-labelledby="saved-title">
-          <h2 id="saved-title">记录详情</h2>
-          <p className="saved-date">记录日期：<time dateTime={entry.entryDate}>{entry.entryDate}</time></p>
-          {entry.origin?.type === 'reading-note' && <p className="reading-source">
-            来自《{entry.origin.bookTitle}》的阅读备注与感悟；原文保存于<time dateTime={entry.origin.noteSavedAt}>
-              {new Date(entry.origin.noteSavedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
-            </time>（北京时间）
-          </p>}
-          <h3>你的原文</h3>
-          <p className="entry-original">{entry.text}</p>
-          <p className="scope-note">创建时间：{new Date(entry.createdAt).toLocaleString('zh-CN')}<br />更新时间：{new Date(entry.updatedAt).toLocaleString('zh-CN')}</p>
-          {entry.adoptedAnalysis && <section className="adopted-analysis"
-            aria-label={entry.adoptedAnalysis.source === 'demo' ? '已采纳的演示分析' : '已采纳的 AI 分析'}>
-            <h3>{entry.adoptedAnalysis.source === 'demo' ? '已采纳的演示分析' : '已采纳的 AI 分析'}</h3>
-            <p>{entry.adoptedAnalysis.source === 'demo'
-              ? '来自固定虚构测试结果，经你核对或编辑后采纳；非真实 AI 生成，与原文分开展示。'
-              : 'AI 生成并经你采纳，与原文分开展示。'}</p>
-            <p className="entry-original">{entry.adoptedAnalysis.summary}</p>
-            <ul>{entry.adoptedAnalysis.questions.map((question, index) => <li key={index}>{question}</li>)}</ul>
-            {entry.adoptedAnalysis.adoptedAt && <p className="scope-note">采纳时间：<time dateTime={entry.adoptedAnalysis.adoptedAt}>{new Date(entry.adoptedAnalysis.adoptedAt).toLocaleString('zh-CN')}</time></p>}
-          </section>}
-          <AnalysisPanel key={`${entry.id}:${analysisVisit}`} entry={entry} disabled={working} onStateChange={setAnalysisState}
-            onAdopted={(saved) => setEntries((current) => sortEntries(current.map((item) => item.id === saved.id ? saved : item)))} />
-          <div className="record-actions">
-            <button type="button" className="favorite-button" disabled={busy}
-              aria-busy={favoriteAction?.entryId === entry.id} aria-pressed={entryFavorited}
-              aria-label={entryFavorited ? `已收藏 ${entry.entryDate} 的日总结，点击取消收藏` : `收藏 ${entry.entryDate} 的日总结`}
-              onClick={() => void toggleFavorite(entry)}>
-              {favoriteAction?.entryId === entry.id
-                ? favoriteAction.removing ? '取消中…' : '收藏中…'
-                : entryFavorited ? '已收藏' : '收藏日总结'}
-            </button>
-            <button type="button" disabled={busy} onClick={() => requestAction({ type: 'edit' })}>修改记录</button>
-            <button className="danger-button" type="button" disabled={busy} onClick={() => requestAction({ type: 'delete' })}>删除记录</button>
-            <a href="#/books">从这条记录去选书</a>
-          </div>
-          {favoriteFeedback?.entryId === entry.id && <p
-            className={favoriteFeedback.type === 'error' ? 'error-panel' : 'success-message'}
-            role={favoriteFeedback.type === 'error' ? 'alert' : 'status'}>
-            {favoriteFeedback.message}
-          </p>}
-          {busy && <p role="status">正在处理，请稍候……</p>}
-        </section>}
-      </>}
 
       <dialog ref={dialog} aria-labelledby="record-confirm-title" onCancel={() => setConfirmation(null)}>
         <h2 id="record-confirm-title">{confirmation?.kind === 'delete' ? '确认删除这条记录？' : confirmation?.kind === 'replace' ? '修改原文会清除旧分析' : '要放弃未保存的更改吗？'}</h2>

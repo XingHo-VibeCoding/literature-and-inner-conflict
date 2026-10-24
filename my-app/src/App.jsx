@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import JournalPage from './pages/JournalPage.jsx';
 import BooksPage from './pages/BooksPage.jsx';
 import HomePage from './pages/HomePage.jsx';
+import usePageMotion from './components/usePageMotion.js';
 import { getBook, getRecommendationContext } from './services/catalog.js';
 
 const sections = {
@@ -23,6 +24,8 @@ function readPath() {
 
 export default function App() {
   const [path, setPath] = useState(readPath);
+  const { transitionTo, targetPath } = usePageMotion(path);
+  const handledLocation = useRef(null);
   const [journalDraft, setJournalDraft] = useState({ dirty: false, saving: false });
   const [bookDraft, setBookDraft] = useState({ dirty: false, saving: false });
   const [pendingPath, setPendingPath] = useState(null);
@@ -47,22 +50,28 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const nextPath = readPath();
+      const locationKey = JSON.stringify([nextPath, window.history.state?.bookVisitId || null]);
+      if (handledLocation.current === locationKey) return;
+      handledLocation.current = locationKey;
       const context = bookVisits.current.get(window.history.state?.bookVisitId) || null;
-      if (nextPath === path) {
+      if (nextPath === targetPath.current) {
         setBookDetailContext(context);
         return;
       }
       if (activeDraft.dirty || activeDraft.saving) {
         window.history.replaceState(activeHistoryState.current, '', `#${path}`);
+        handledLocation.current = null;
         if (activeDraft.saving) setNavigationMessage('正在保存，请等待结果后再离开。');
         else setPendingPath({ path: nextPath, context });
       } else {
         activeHistoryState.current = window.history.state;
-        setPath(nextPath);
-        setBookDetailContext(context);
-        if (context?.position) bookListPosition.current = { ...context.position };
-        setJournalDraft({ dirty: false, saving: false });
-        setBookDraft({ dirty: false, saving: false });
+        transitionTo(nextPath, () => {
+          setPath(nextPath);
+          setBookDetailContext(context);
+          if (context?.position) bookListPosition.current = { ...context.position };
+          setJournalDraft({ dirty: false, saving: false });
+          setBookDraft({ dirty: false, saving: false });
+        });
       }
     };
     window.addEventListener('hashchange', onHashChange);
@@ -84,11 +93,18 @@ export default function App() {
     if (context) bookVisits.current.set(visitId, context);
     activeHistoryState.current = visitId ? { bookVisitId: visitId } : null;
     window.history.pushState(activeHistoryState.current, '', `#${nextPath}`);
-    setPath(nextPath);
-    setBookDetailContext(context);
-    setJournalDraft({ dirty: false, saving: false });
-    setBookDraft({ dirty: false, saving: false });
-    setNavigationMessage('');
+    handledLocation.current = JSON.stringify([nextPath, visitId]);
+    // 详情去首页或总结时从页首进入；返回书单仍恢复原书卡位置。
+    const startAtTop = (['/', '/journal', '/books'].includes(path) && ['/', '/journal', '/books'].includes(nextPath))
+      || (path.startsWith('/books/') && ['/', '/journal'].includes(nextPath));
+    transitionTo(nextPath, () => {
+      if (startAtTop && nextPath === '/books') bookListPosition.current = { top: 0, bookKey: null };
+      setPath(nextPath);
+      setBookDetailContext(context);
+      setJournalDraft({ dirty: false, saving: false });
+      setBookDraft({ dirty: false, saving: false });
+      setNavigationMessage('');
+    }, { startAtTop });
   }
 
   function handleLinkClick(event) {
@@ -96,7 +112,7 @@ export default function App() {
     if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     const nextPath = link.getAttribute('href').slice(1);
-    if (nextPath === path) return;
+    if (nextPath === targetPath.current) return;
     if (activeDraft.saving) {
       setNavigationMessage('正在保存，请等待结果后再离开。');
     } else if (activeDraft.dirty) {
@@ -116,7 +132,7 @@ export default function App() {
   }, [isHome, section, detailTitle]);
 
   return (
-    <div className={`app-shell${isHome ? ' home-shell' : path === '/journal' ? ' journal-shell' : isBooks ? ' books-shell' : ''}`} onClick={handleLinkClick}>
+    <div className={`app-shell${isHome ? ' home-shell' : path === '/journal' ? ' journal-shell' : isBooks ? ` books-shell${path === '/books' ? ' books-list-shell' : ' books-detail-shell'}` : ''}`} onClick={handleLinkClick}>
       <header className="site-header">
         <div className="site-identity">
           <a className="brand" href="#/">
@@ -137,9 +153,11 @@ export default function App() {
         {isHome ? (
           <HomePage />
         ) : (
-          <section className="section-page" aria-labelledby="section-title">
-            <a className="back-link" href="#/">← 返回首页</a>
-            <h1 id="section-title">{section?.title || '页面未找到'}</h1>
+          <section className="section-page" aria-labelledby={isBooks && path !== '/books' ? 'book-title' : 'section-title'}>
+            {(!isBooks || path === '/books') && <>
+              <a className="back-link" href="#/">← 返回首页</a>
+              <h1 id="section-title">{section?.title || '页面未找到'}</h1>
+            </>}
             {path === '/journal' && <p className="journal-intro">{section.description}</p>}
             {path === '/journal' ? <JournalPage onDraftChange={setJournalDraft} /> : isBooks ? (
               <BooksPage path={path} browse={bookBrowse} onBrowseChange={setBookBrowse}
@@ -156,7 +174,7 @@ export default function App() {
         <p>离开会丢弃这次尚未保存的输入，已保存的记录不受影响。</p>
         <div className="dialog-actions">
           <button type="button" autoFocus onClick={() => setPendingPath(null)}>继续编辑</button>
-          <button type="button" onClick={() => { navigate(pendingPath.path, pendingPath.context); setPendingPath(null); }}>放弃更改</button>
+          <button type="button" onClick={() => { leaveDialog.current.close(); navigate(pendingPath.path, pendingPath.context); setPendingPath(null); }}>放弃更改</button>
         </div>
       </dialog>
 

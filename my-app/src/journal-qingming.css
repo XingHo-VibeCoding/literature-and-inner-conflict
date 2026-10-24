@@ -1,0 +1,237 @@
+/* Day 29：自总结的河街画卷与宣纸表单，仅作用于当前板块。 */
+.journal-shell {
+  --home-ink: #2d271f;
+  --home-muted: #675b4a;
+  --home-green: #a63024;
+  --home-line: #c7b598;
+  --home-display-font: "KaiTi", "楷体", "STKaiti", "华文楷体", "Kaiti SC", "STKaitiSC-Regular", serif;
+  --journal-paper: url("./assets/journal/xuan-paper.webp");
+  width: 100%;
+  max-width: none;
+  padding-inline: clamp(24px, 6.5vw, 116px);
+  font-family: var(--home-display-font);
+  font-synthesis: weight;
+  color: var(--home-ink);
+  overflow-anchor: none;
+  background: #f6eedc var(--journal-paper) repeat;
+  background-size: 640px;
+  scrollbar-color: #b09a7b #f6eedc;
+}
+.journal-shell::before {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 100vh;
+  height: 100lvh;
+  /* 同一幅画卷覆盖视口，长记录在画卷上滚动，不拼接、不随内容拉伸。 */
+  background: #f4e7cc url("./assets/journal/river-town-desktop.webp") center top / cover no-repeat;
+  mask-image: none;
+}
+.journal-shell::after { content: none; }
+.journal-shell ::selection { background: #e7c8a4; color: #2d271f; }
+.journal-shell .site-header { padding: 10px 0; gap: 14px; border-color: #b7a68b; }
+.journal-shell .site-identity { gap: 14px 24px; }
+.journal-shell .brand { gap: 13px; font: 700 25px / 1.4 var(--home-display-font); letter-spacing: .06em; }
+.journal-shell .home-brand-mark {
+  display: inline-grid; place-items: center; flex-shrink: 0; width: 34px; height: 36px;
+  border: 1px solid #bf5a45; outline: 1px solid #fbecce; outline-offset: -4px;
+  border-radius: 3px; background: #aa3225; color: #fff8e8; font: 25px / 1 var(--home-display-font);
+}
+.journal-shell .stage-label { padding-left: 20px; border-left: 1px solid #ad9f88; font-size: 17px; letter-spacing: .06em; }
+.journal-shell .site-nav { gap: 25px; }
+.journal-shell .site-nav a { padding: 0 6px; font-size: 18px; color: var(--home-ink); }
+.journal-shell .site-nav a[aria-current="page"] { color: var(--home-green); text-decoration-color: var(--home-green); text-underline-offset: 11px; }
+.journal-shell main { padding: 25px 0 38px; }
+.journal-shell .section-page, .journal-shell .journal { max-width: none; width: 100%; }
+.journal-shell .back-link { margin: 0 0 6px; font-size: 17px; text-decoration: none; }
+.journal-shell .back-link:hover { text-decoration: underline; }
+.journal-shell h1 { font-size: clamp(36px, 4.3vw, 60px); font-weight: 700; letter-spacing: .04em; line-height: 1.35; margin: 0 0 4px; }
+.journal-shell .journal-intro { max-width: 770px; margin: 0 0 20px; color: var(--home-ink); font-size: 20px; line-height: 1.7; }
+.journal-shell .journal-notes { display: flex; align-items: center; gap: 20px; margin: 0 0 20px; }
+.journal-shell .journal-mode-note {
+  flex: 0 0 auto; margin: 0; padding: 5px 12px; border: 1px solid #ba7562; border-radius: 2px;
+  background: #faf0df; color: #943327; font-size: 16px; line-height: 1.6;
+}
+.journal-shell .journal-notes > div { max-width: 950px; }
+.journal-shell .storage-notice { margin: 0 0 8px; padding: 0; border: 0; border-radius: 0; background: none; color: var(--home-muted); font-size: 14px; line-height: 1.75; }
+.journal-shell .journal-notes .storage-notice { margin: 0; }
+.journal-shell .journal-notes .scope-note { margin: 3px 0 0; }
+.journal-shell .scope-note, .journal-shell .saved-date { color: var(--home-muted); font-size: 14px; line-height: 1.7; }
+.journal-shell .journal-workspace { display: grid; grid-template-columns: minmax(0, .42fr) minmax(0, .58fr); align-items: start; gap: 14px; }
+.journal-shell .journal-record-column { min-width: 0; display: flow-root; }
+.journal-shell .journal-record-content { display: grid; gap: 14px; align-content: start; }
+.journal-shell .journal-motion-content { display: flow-root; }
+.journal-shell .journal-editor-column { min-width: 0; display: flow-root; }
+.journal-shell .journal-feedback { display: flow-root; }
+.journal-shell .journal-feedback:empty { height: 0; }
+.journal-shell .history-section, .journal-shell .saved-entry,
+.journal-shell .analysis-panel, .journal-shell .journal-form > fieldset {
+  min-width: 0; margin: 0; padding: 24px 26px; border: 1px solid var(--home-line); border-radius: 2px;
+  background: linear-gradient(rgb(255 251 241 / 55%), rgb(255 251 241 / 55%)), var(--journal-paper) repeat; background-size: auto, 640px; box-shadow: none;
+}
+.journal-shell h2, .journal-shell .analysis-panel > h3, .journal-shell .journal-form legend {
+  margin: 0 0 12px; font-size: 28px; font-weight: 700; line-height: 1.45; letter-spacing: .04em;
+}
+.journal-shell h3 { margin: 18px 0 8px; font-size: 19px; font-weight: 700; }
+.journal-shell .history-state-summary { color: var(--home-muted); font-size: 14px; font-weight: 400; margin: 0 0 4px; }
+.journal-shell .history-section > .scope-note { margin: 0 0 10px; font-size: 13px; }
+.journal-shell .history-state { color: var(--home-muted); margin-top: 12px; }
+.journal-shell .history-list { margin: 12px 0 0; gap: 8px; max-height: 360px; overflow-y: auto; padding: 4px; scrollbar-width: thin; }
+.journal-shell .history-item { padding: 10px 13px; gap: 3px; border: 1px solid #c5b393; border-radius: 2px; background: #f7eedc; }
+.journal-shell .history-item[aria-current="true"] {
+  border: 1px solid #b77761; background: #f1e1ce; box-shadow: inset 3px 0 #a63024;
+}
+.journal-shell .history-item[aria-current="true"]:hover:not(:disabled) { background: #ecd7bc; }
+.journal-shell .history-item[aria-current="true"] time { color: #953126; text-decoration: none; }
+.journal-shell .history-item time { font-size: 17px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.journal-shell .history-excerpt { font-size: 16px; line-height: 1.65; }
+.journal-shell .history-item .scope-note { font-size: 13px; }
+.journal-shell .journal-toolbar { margin: 14px 0 0; gap: 10px; }
+.journal-shell .journal-toolbar button { flex: 1; }
+.journal-shell button {
+  min-height: 44px; padding: 8px 14px; border: 1px solid #9d8e75; border-radius: 3px;
+  background: #f9f0df; color: var(--home-ink); font: 16px / 1.5 var(--home-display-font);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.journal-shell button:hover:not(:disabled) { background: #eddec3; border-color: #9d614d; }
+.journal-shell .primary-button, .journal-shell .journal-toolbar button:first-child,
+.journal-shell .favorite-button[aria-pressed="true"], .journal-shell .history-preview-options button[aria-pressed="true"] {
+  background: #a63024; border-color: #a63024; color: #fff8e9;
+}
+.journal-shell .primary-button:hover:not(:disabled), .journal-shell .journal-toolbar button:first-child:hover:not(:disabled),
+.journal-shell .favorite-button[aria-pressed="true"]:hover:not(:disabled) { background: #86291f; border-color: #86291f; }
+.journal-shell button:disabled { opacity: 1; background: #e1d8c8; border-color: #c0b39c; color: #766c5c; cursor: not-allowed; }
+.journal-shell .danger-button { color: #993c2c; border-color: #b37861; }
+.journal-shell .danger-button:hover:not(:disabled) { background: #f3e0d0; }
+.journal-shell :is(a, button, input, textarea, summary):focus-visible { outline: 2px solid #9c392a; outline-offset: 3px; }
+.journal-shell .saved-date { margin-bottom: 12px; font-size: 16px; font-variant-numeric: tabular-nums; }
+.journal-shell .saved-entry > h3 { margin-top: 12px; }
+.journal-shell .saved-entry > .entry-original, .journal-shell input, .journal-shell textarea {
+  padding: 14px 16px; border: 1px solid #c2ac87; border-radius: 3px;
+  background: #fff9ed var(--journal-paper) repeat; background-size: 520px; background-blend-mode: multiply;
+  box-shadow: inset 0 0 0 2px #fff8e7; color: var(--home-ink); font: 18px / 1.85 var(--home-display-font);
+}
+.journal-shell .saved-entry > .entry-original { margin: 0 0 12px; min-height: 180px; }
+.journal-shell .saved-entry > .scope-note { font-size: 13px; }
+.journal-shell .saved-entry.is-favorited { border-color: #a63024; background: #faf2e3 var(--journal-paper); background-size: 640px; box-shadow: none; }
+.journal-shell .record-actions { margin: 16px 0 8px; gap: 10px; }
+.journal-shell .saved-entry > .record-actions button { flex: 1; padding-inline: 8px; }
+.journal-shell .saved-entry > .record-actions a { flex-basis: 100%; padding: 4px 0; }
+.journal-shell .record-actions a { color: #9a3326; font-size: 16px; }
+.journal-shell .analysis-panel > .record-actions { margin: 12px 0 20px; }
+.journal-shell .analysis-panel form > fieldset {
+  padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+}
+.journal-shell .analysis-panel legend { width: 100%; padding: 0; margin: 0 0 8px; font-size: 17px; font-weight: 700; }
+.journal-shell .analysis-panel fieldset > p { font-size: 15px; color: var(--home-muted); margin-bottom: 12px; }
+.journal-shell label { font-size: 18px; margin: 18px 0 8px; }
+.journal-shell textarea { min-height: 140px; caret-color: #9a3326; }
+.journal-shell textarea::placeholder { color: #756750; }
+.journal-shell .analysis-question textarea { min-height: 84px; }
+.journal-shell .analysis-panel #summary-count, .journal-shell .analysis-question .scope-note { margin: 4px 0; font-size: 13px; text-align: right; }
+.journal-shell .analysis-question { display: flow-root; }
+.journal-shell .analysis-question > button { float: right; min-height: 44px; padding: 4px 8px; margin-top: -4px; border-color: transparent; background: transparent; font-size: 14px; text-decoration: underline; text-underline-offset: 4px; }
+.journal-shell .analysis-question label { margin-top: 12px; }
+.journal-shell .field-error:empty { display: none; }
+.journal-shell [aria-invalid="true"] { border-color: #a33327; }
+.journal-shell .analysis-panel form .record-actions { margin-top: 20px; }
+.journal-shell .analysis-panel form .primary-button { flex: 1; min-height: 48px; font-size: 18px; }
+.journal-shell .analysis-panel > [role="status"] { margin: 16px 0 0; color: #675138; font-size: 14px; }
+.journal-shell .journal-form { margin: 0; min-width: 0; }
+.journal-shell .journal-form textarea { min-height: 260px; }
+.journal-shell .journal-form > fieldset { padding: 24px 26px; }
+.journal-shell .journal-form .record-actions .scope-note { flex-basis: 100%; }
+.journal-shell .adopted-analysis { margin-top: 20px; padding: 18px 0 0; border: 0; border-top: 1px solid var(--home-line); border-radius: 0; background: none; }
+.journal-shell .adopted-analysis h3 { margin-top: 0; }
+.journal-shell .adopted-analysis > p:not(.entry-original) { font-size: 14px; color: var(--home-muted); }
+.journal-shell .adopted-analysis .entry-original, .journal-shell .adopted-analysis li { font-size: 17px; }
+.journal-shell .success-message { padding: 12px 16px; border: 1px solid #b4b295; border-radius: 2px; background: #f1eddb; color: #4e5c36; font-size: 15px; font-weight: 400; }
+.journal-shell .error-panel { border-color: #b37360; border-radius: 2px; background: #f9e9dc; color: #8d3024; }
+.journal-shell .field-error { color: #8d3024; }
+.journal-shell .history-skeleton span { background: #e3d4b9; border-radius: 1px; }
+.journal-shell .history-preview-controls { margin: 26px 0 0; border-color: #bdad91; }
+.journal-shell .history-preview-controls summary { padding-inline: 4px; }
+.journal-shell .history-preview-controls[open] { padding: 14px 20px; background: #faf2e3 var(--journal-paper); background-size: 640px; }
+.journal-shell dialog { padding: 26px; border-color: #b19775; border-radius: 3px; background: #faf2e3 var(--journal-paper); background-size: 640px; color: var(--home-ink); }
+.journal-shell dialog::backdrop { background: rgb(45 35 23 / 40%); }
+.journal-shell dialog h2 { font-size: 25px; }
+.journal-shell .site-footer { padding: 25px 0 30px; color: #5c503e; border-color: #b9a88e; font-size: 15px; letter-spacing: .06em; }
+@media (max-width: 1000px) {
+  .journal-shell { padding-inline: 28px; }
+  .journal-shell .stage-label { display: none; }
+  .journal-shell .journal-workspace { grid-template-columns: minmax(0, .43fr) minmax(0, .57fr); gap: 12px; }
+  .journal-shell .history-section, .journal-shell .saved-entry, .journal-shell .analysis-panel, .journal-shell .journal-form > fieldset { padding: 20px; }
+  .journal-shell h2, .journal-shell .analysis-panel > h3, .journal-shell .journal-form legend { font-size: 25px; }
+}
+@media (max-width: 760px) {
+  .journal-shell { padding-inline: 20px; }
+  .journal-shell::before { background-image: url("./assets/journal/river-town-mobile.webp"); }
+  .journal-shell .site-header {
+    position: relative; isolation: isolate; justify-content: center;
+    padding: 10px 0 6px; gap: 6px; border-color: transparent; background: transparent;
+  }
+  .journal-shell .site-header::before {
+    content: ""; position: absolute; inset: -6px -8px -26px; z-index: -1; pointer-events: none;
+    background:
+      linear-gradient(rgb(250 242 225 / 84%), rgb(250 242 225 / 84%)),
+      var(--journal-paper) center / 520px repeat;
+    -webkit-mask-image:
+      linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent),
+      linear-gradient(#000 0%, #000 64%, rgb(0 0 0 / 76%) 78%, transparent 100%);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent),
+      linear-gradient(#000 0%, #000 64%, rgb(0 0 0 / 76%) 78%, transparent 100%);
+    mask-composite: intersect;
+  }
+  .journal-shell .site-identity { width: 100%; justify-content: center; gap: 12px; }
+  .journal-shell .brand { font-size: 22px; gap: 10px; }
+  .journal-shell .home-brand-mark { width: 30px; height: 32px; font-size: 23px; }
+  .journal-shell .site-nav { display: flex; width: 100%; justify-content: center; gap: 30px; padding: 0; border: 0; }
+  .journal-shell .site-nav a { font-size: 18px; }
+  .journal-shell main { padding-top: 72px; }
+  .journal-shell .back-link { font-size: 16px; margin-bottom: 8px; }
+  .journal-shell h1 { font-size: clamp(29px, 7.8vw, 44px); letter-spacing: .01em; }
+  .journal-shell .journal-intro { margin: 10px 0 18px; font-size: 17px; line-height: 1.8; }
+  .journal-shell .journal-notes { display: block; margin-bottom: 18px; }
+  .journal-shell .journal-mode-note { display: inline-block; margin-bottom: 10px; font-size: 15px; }
+  .journal-shell .journal-notes .storage-notice, .journal-shell .journal-notes .scope-note { font-size: 13px; }
+  .journal-shell .journal-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .journal-shell .journal-record-column { gap: 14px; }
+  .journal-shell .history-section, .journal-shell .saved-entry, .journal-shell .analysis-panel, .journal-shell .journal-form > fieldset { padding: 20px 18px; }
+  .journal-shell h2, .journal-shell .analysis-panel > h3, .journal-shell .journal-form legend { font-size: 25px; }
+  .journal-shell .saved-entry > .entry-original, .journal-shell input, .journal-shell textarea { font-size: 17px; padding: 12px 13px; line-height: 1.85; }
+  .journal-shell #analysis-summary { min-height: 210px; }
+  .journal-shell .analysis-panel > .record-actions > button { width: 100%; }
+  .journal-shell .analysis-panel form .record-actions > button { flex: 1 1 100%; }
+  .journal-shell .saved-entry > .record-actions button { font-size: 15px; }
+  .journal-shell .history-list { max-height: 320px; }
+  .journal-shell .site-footer { font-size: 13px; padding: 20px 0; }
+}
+@media (max-width: 360px) {
+  .journal-shell { padding-inline: 12px; }
+  .journal-shell .site-nav { gap: 22px; }
+  .journal-shell .brand { font-size: 21px; }
+  .journal-shell .history-section, .journal-shell .saved-entry, .journal-shell .analysis-panel, .journal-shell .journal-form > fieldset { padding-inline: 14px; }
+  .journal-shell .journal-toolbar button { padding-inline: 8px; font-size: 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-shell button { transition: none; }
+}
+
+/* 切换内容轻轻入场；尺寸过渡由面板钩子处理，不对文字进行缩放。 */
+@keyframes journal-reveal {
+  from { opacity: .65; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.journal-shell .journal-form, .journal-shell .saved-entry, .journal-shell .journal-editor-column > .journal-motion-content > .analysis-panel, .journal-shell .analysis-panel form {
+  animation: journal-reveal 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.journal-shell dialog[open] { animation: journal-reveal 180ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes journal-backdrop { from { background-color: transparent; } to { background-color: rgb(45 35 23 / 40%); } }
+.journal-shell dialog[open]::backdrop { animation: journal-backdrop 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .journal-shell .journal-form, .journal-shell .saved-entry, .journal-shell .journal-editor-column > .journal-motion-content > .analysis-panel, .journal-shell .analysis-panel form,
+  .journal-shell dialog, .journal-shell dialog[open], .journal-shell dialog::backdrop, .journal-shell dialog[open]::backdrop {
+    animation: none; transition: none; transform: none;
+  }
+}

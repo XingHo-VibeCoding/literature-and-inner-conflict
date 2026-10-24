@@ -127,7 +127,7 @@ export default function BookReadingPanel({ book, favorite, notes, onFavoriteChan
   function renderSavedNote(note, latest) {
     const selected = Boolean(note.summaryLink?.active);
     const changing = busy && operation?.type === 'summary' && operation.noteId === note.id;
-    const Heading = latest ? 'h4' : 'h5';
+    const Heading = latest ? 'h3' : 'h4';
     const savedLabel = new Date(note.savedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
     return (
       <article className={`saved-note${selected ? ' is-in-summary' : ''}`} key={note.id}
@@ -160,7 +160,7 @@ export default function BookReadingPanel({ book, favorite, notes, onFavoriteChan
 
   return (
     <section className="reading-panel" aria-labelledby="reading-title">
-      <h3 id="reading-title">我的阅读记录</h3>
+      <h2 id="reading-title">我的阅读记录</h2>
       <p className="storage-notice">阅读备注与感悟、入库状态保存在当前浏览器，刷新后仍保留。书本收藏仍只在本次打开页面期间有效。原文由你填写，不会发送给 AI。</p>
       <div className="record-actions">
         <span aria-live="polite">{favorite ? '已收藏' : '未收藏'}</span>
@@ -204,7 +204,7 @@ export default function BookReadingPanel({ book, favorite, notes, onFavoriteChan
       {savedNote ? renderSavedNote(savedNote, true) : <p>这件作品还没有已保存的阅读备注与感悟。</p>}
       <section id="past-reading-notes" className="past-reading-notes" hidden={!showingHistory}
         aria-labelledby="past-reading-title">
-        <h4 id="past-reading-title">往期阅读备注与感悟</h4>
+        <h3 id="past-reading-title">往期阅读备注与感悟</h3>
         {showingHistory && olderNotes.map((note) => renderSavedNote(note, false))}
       </section>
       <dialog ref={deleteDialog} aria-labelledby="delete-note-title">

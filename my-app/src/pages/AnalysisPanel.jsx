@@ -108,7 +108,7 @@ export default function AnalysisPanel({ entry, disabled, onStateChange, onAdopte
       {draft && <form onSubmit={adopt} noValidate>
         <fieldset disabled={disabled || saving}>
           <legend>演示草稿（固定测试结果，非真实 AI 生成）</legend>
-          <p>请对照上方原文核对，可编辑后再采纳。修改演示文字也不会改变它的来源标记。</p>
+          <p>请对照记录原文核对，可编辑后再采纳。修改演示文字也不会改变它的来源标记。</p>
           <label htmlFor="analysis-summary">演示总结</label>
           <textarea id="analysis-summary" rows={4} value={draft.summary}
             aria-invalid={Boolean(errors.summary)} aria-describedby="summary-count summary-error"

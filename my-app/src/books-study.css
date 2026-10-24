@@ -1,0 +1,305 @@
+/* Day 29：书单与详情共用书房、顶栏和页脚，其余列表样式保持独立。 */
+.books-shell {
+  --home-ink: #2c251c;
+  --home-muted: #665642;
+  --home-green: #9c3025;
+  --home-line: #c8b28e;
+  --home-display-font: "KaiTi", "楷体", "STKaiti", "华文楷体", "Kaiti SC", "STKaitiSC-Regular", serif;
+  --books-paper: url("./assets/journal/xuan-paper.webp");
+  width: 100%; max-width: none; padding-inline: clamp(24px, 8vw, 144px);
+  font-family: var(--home-display-font); font-synthesis: weight;
+  background: #f4e8d1; overflow-anchor: none; scrollbar-color: #ad9270 #f4e8d1;
+}
+.books-shell::before {
+  inset: 0 0 auto; height: 100vh; height: 100lvh;
+  background: #f4e8d1 url("./assets/books/study-desktop.webp") center top / cover no-repeat;
+}
+.books-shell ::selection { color: #241b14; background: #e5c294; }
+.books-shell .site-header { padding: 10px 0; gap: 14px; border-color: transparent; background: transparent; }
+.books-shell .site-identity { gap: 12px 22px; }
+.books-shell .brand { font: 700 25px / 1.4 var(--home-display-font); letter-spacing: .04em; }
+.books-shell .home-brand-mark {
+  width: 34px; height: 36px; flex-shrink: 0; color: #fff8e8;
+  border: 1px solid #bf5a45; outline: 1px solid #fbecce; outline-offset: -4px;
+  border-radius: 3px; background: #a63024; font: 25px / 1 var(--home-display-font);
+}
+.books-shell .stage-label { color: var(--home-muted); font-size: 16px; }
+.books-shell .site-nav { gap: 24px; border-color: transparent; }
+.books-shell .site-nav a { color: var(--home-ink); font: 18px var(--home-display-font); padding: 0 5px; }
+.books-shell .site-nav a[aria-current="page"] { color: var(--home-ink); text-decoration-color: #a63024; text-underline-offset: 10px; }
+.books-list-shell main { padding: 24px 0 32px; }
+.books-list-shell .section-page { max-width: 1440px; }
+.books-list-shell .books-page { max-width: none; }
+.books-shell .back-link { margin: 0; padding: 4px 10px; min-height: 44px; width: fit-content; font-size: 17px; color: var(--home-ink); background: transparent; }
+.books-list-shell h1 { margin: 0 0 4px; text-align: center; font-size: clamp(36px, 4vw, 58px); font-weight: 700; letter-spacing: .04em; }
+.books-list-shell .books-page > p:first-child { color: var(--home-ink); font-size: 19px; text-align: center; margin: 0 auto 22px; line-height: 1.75; }
+.books-list-shell .books-reading-clues,
+.books-list-shell .books-results:not(.has-recommendations),
+.books-list-shell .recommendation-group {
+  background: linear-gradient(rgb(255 250 235 / 58%), rgb(255 250 235 / 58%)), var(--books-paper) repeat;
+  background-size: auto, 640px; border: 1px solid #cfb994; border-radius: 3px; padding: 22px 26px;
+}
+.books-list-shell .books-filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 26px; border-bottom: 1px solid #d4c09e; padding-bottom: 16px; margin-bottom: 18px; }
+.books-list-shell .book-filters { display: block; min-width: 0; padding: 0; margin: 0; border: 0; border-radius: 0; background: none; }
+.books-list-shell .book-filters legend { float: left; width: 100%; margin: 0 0 8px; padding: 0; font-size: 17px; font-weight: 700; }
+.books-list-shell .filter-options { clear: both; display: flex; flex-wrap: wrap; gap: 8px; }
+.books-list-shell button {
+  min-height: 44px; padding: 8px 14px; border: 1px solid #bba17a; border-radius: 3px;
+  font: 17px / 1.5 var(--home-display-font); color: var(--home-ink);
+  background: #fbf1df; transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out;
+}
+.books-list-shell button:hover:not(:disabled) { background: #eaddc4; border-color: #85633e; }
+.books-list-shell .filter-options button[aria-pressed="true"] { background: #896332; border-color: #896332; color: #fff9ed; text-decoration: none; }
+.books-list-shell .filter-options button[aria-pressed="true"]:hover { background: #715027; border-color: #715027; }
+.books-list-shell .primary-button { background: #a63024; color: #fff9ed; border-color: #a63024; padding-inline: 25px; }
+.books-list-shell .primary-button:hover:not(:disabled) { background: #84281f; border-color: #84281f; }
+.books-list-shell button:disabled { opacity: .55; cursor: wait; }
+.books-list-shell .recommendation-form { margin: 0; }
+.books-list-shell .recommendation-form fieldset { border: 0; border-radius: 0; padding: 0; margin: 0; background: none; min-width: 0; }
+.books-list-shell .recommendation-form legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-size: 25px; font-weight: 700; }
+.books-list-shell .recommendation-form legend + * { clear: both; }
+.books-list-shell .scope-note { font-size: 14px; color: var(--home-muted); line-height: 1.7; }
+.books-list-shell .recommendation-form .scope-note { margin: 0 0 10px; }
+.books-list-shell .recommendation-form .scope-note:last-child { margin-bottom: 0; }
+.books-list-shell .selection-grid { gap: 18px; }
+.books-list-shell label { margin: 0 0 5px; font-size: 17px; font-weight: 400; }
+.books-list-shell select { min-height: 46px; padding: 8px 12px; border: 1px solid #bda784; border-radius: 2px; font: 17px / 1.5 var(--home-display-font); color: var(--home-ink); background: #f9efdc var(--books-paper) center / 640px; }
+.books-list-shell select option { background: #f9efdc; color: #2c251c; }
+.books-list-shell [aria-invalid="true"] { border-color: #9c3025; }
+.books-list-shell .record-actions { margin: 14px 0 10px; gap: 10px; }
+.books-list-shell :is(a, button, select):focus-visible { outline: 3px solid #8f3628; outline-offset: 4px; }
+.books-list-shell .field-error, .books-list-shell .error-panel { color: #8e2d21; }
+.books-list-shell .recommendation-notice { margin: 15px 0 8px; color: #704e2c; padding: 8px 14px; background: #f8efdd; border-left: 0; }
+.books-list-shell .books-results { margin-top: 20px; }
+.books-list-shell .books-results > section > h2 { margin: 0 0 10px; font-size: 24px; font-weight: 700; background: #f8efdd; padding: 8px 18px; }
+.books-list-shell .book-list-heading { margin: 0; justify-content: space-between; }
+.books-list-shell .book-list-heading h2 { font-size: 28px; font-weight: 700; }
+.books-list-shell .book-list-heading p { font-size: 16px; color: var(--home-muted); }
+.books-list-shell .recommendation-conditions { margin: 0 0 16px; padding: 12px 18px; border: 1px solid #cbb693; border-radius: 2px; background: #f9efdd; font-size: 16px; }
+.books-list-shell .recommendation-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.books-list-shell .recommendation-group { margin: 0; min-width: 0; padding: 22px; }
+.books-list-shell .recommendation-group > h3 { display: flex; align-items: center; gap: 16px; font-size: 29px; font-weight: 700; margin: 0 0 4px; }
+.books-list-shell .recommendation-group > h3::after { content: ""; height: 1px; flex: 1; background: #c6ab83; }
+.books-list-shell .recommendation-group > .scope-note { margin: 0 0 20px; }
+.books-list-shell .book-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; align-items: start; }
+.books-list-shell .recommendation-group .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.books-list-shell .book-card {
+  display: flex; flex-direction: column; min-width: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none;
+  background: transparent; line-height: 1.8;
+}
+.books-list-shell .book-card.is-favorited { background: none; box-shadow: none; }
+.books-list-shell .book-card-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.books-list-shell .book-cover-link { display: block; width: 100%; max-width: 240px; align-self: center; margin: 0 0 18px; text-decoration: none; perspective: 900px; }
+.books-list-shell .book-cover {
+  --cover-color: #f3e8cf; --cover-edge: #a08a66;
+  display: block; position: relative; width: 100%; aspect-ratio: .76;
+  color: #211b15; border: 1px solid var(--cover-edge); border-radius: 4px 2px 2px 4px;
+  background: linear-gradient(color-mix(in srgb, var(--cover-color) 82%, transparent), color-mix(in srgb, var(--cover-color) 82%, transparent)), var(--books-paper) center / 360px;
+  box-shadow: 3px 6px 8px rgb(70 44 18 / 22%);
+  transition: transform 280ms cubic-bezier(.22, 1, .36, 1), box-shadow 280ms ease-out;
+}
+.books-list-shell .book-cover-philosophy { --cover-color: #82999c; --cover-edge: #526864; }
+.books-list-shell .book-cover-humanities { --cover-color: #bd9770; --cover-edge: #8b6744; }
+.books-list-shell .book-cover::before {
+  content: ""; position: absolute; inset: 7px 11px 7px 9px; border: 1px solid var(--cover-edge); pointer-events: none;
+}
+.books-list-shell .book-cover::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 9px; border-radius: 4px 0 0 4px;
+  background: linear-gradient(90deg, rgb(43 30 18 / 35%), transparent 60%, rgb(255 249 226 / 35%));
+  border-right: 1px solid var(--cover-edge); pointer-events: none;
+}
+.books-list-shell .book-cover-label {
+  position: absolute; left: 16%; top: 8%; bottom: 22%; padding: 9px 5px;
+  writing-mode: vertical-rl; text-orientation: upright; font-size: clamp(18px, 1.7vw, 25px); line-height: 1.35; letter-spacing: .07em;
+  border: 3px double #9c835d; background: #f7ecd5 var(--books-paper) center / 440px;
+}
+.books-list-shell .book-cover-author { position: absolute; bottom: 9%; left: 16%; right: 13%; font-size: 12px; line-height: 1.4; }
+.books-list-shell .book-binding { position: absolute; inset: 0 7px 0 auto; width: 12px; border-right: 2px solid #eee1c7; display: flex; flex-direction: column; justify-content: space-around; padding-block: 12%; }
+.books-list-shell .book-binding i { display: block; width: 17px; height: 3px; margin-left: -4px; border: 1px solid #9b7950; background: #ead8b3; border-radius: 2px; }
+.books-list-shell .book-cover-link:hover .book-cover,
+.books-list-shell .book-card:focus-within .book-cover { transform: translateY(-3px); box-shadow: 3px 9px 12px rgb(70 44 18 / 23%); }
+.books-list-shell .book-card :is(h3, h4) { font-size: 24px; font-weight: 700; line-height: 1.45; margin: 0 0 4px; }
+.books-list-shell .book-card :is(h3, h4) a { text-decoration: none; }
+.books-list-shell .book-card :is(h3, h4) a:hover { text-decoration: underline; }
+.books-list-shell .book-types { color: #66513a; font-size: 14px; margin: 0 0 6px; }
+.books-list-shell .book-author { color: #65513c; font-size: 16px; margin: 0 0 9px; }
+.books-list-shell .book-card-copy > p:not([class]) { font-size: 16px; color: #554430; margin: 0 0 12px; }
+.books-list-shell .reading-badges { margin: 0; }
+.books-list-shell .reading-badges:empty { display: none; }
+.books-list-shell .reading-badges span { color: #704a28; background: #ecd4a7; border-radius: 2px; font-size: 13px; }
+.books-list-shell .match-reason { margin: 0 0 10px; padding: 0; background: none; border-radius: 0; font-size: 16px; line-height: 1.8; }
+.books-list-shell .match-reason .reason-label { display: inline; padding: 2px 4px; background: #ecd4a7; color: #65451f; font-size: 13px; }
+.books-list-shell .match-reason p { margin: 0 0 8px; }
+.books-list-shell .match-reason a { display: inline-flex; min-height: 44px; align-items: center; color: #884029; }
+.books-list-shell .book-open { color: #962f23; padding: 7px 0; margin-top: auto; font-size: 17px; border-top: 1px solid #c8b28e; }
+.books-list-shell .empty-recommendations, .books-list-shell .books-results .book-detail { grid-column: 1 / -1; padding: 20px 0; border: 0; border-radius: 0; background: none; box-shadow: none; font-size: 17px; }
+.books-shell .site-footer { padding: 15px 12px 24px; margin-top: 0; color: #59442f; border: 0; background: transparent; font-size: 15px; text-align: center; }
+/* 宣纸只在文字背后提亮，四周渐淡到原书房，不再形成矩形横条。 */
+.books-shell :is(.site-header, .back-link, .site-footer) { position: relative; isolation: isolate; }
+.books-shell :is(.site-header, .back-link, .site-footer)::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+}
+.books-shell .site-header::before {
+  inset: 0 -28px -24px;
+  background: linear-gradient(90deg, transparent, rgb(248 238 218 / 95%) 40px, rgb(248 238 218 / 95%) calc(100% - 40px), transparent);
+  mask-image: linear-gradient(#000 38%, rgb(0 0 0 / 90%) 58%, transparent);
+}
+.books-shell .back-link::before {
+  inset: -7px -12px;
+  background: linear-gradient(90deg, transparent, rgb(248 238 218 / 96%) 18px, rgb(248 238 218 / 96%) calc(100% - 18px), transparent);
+  mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent);
+}
+.books-shell .site-footer::before {
+  inset: -14px 0 0; max-width: 820px; margin-inline: auto;
+  background: linear-gradient(90deg, transparent, rgb(248 238 218 / 94%) 16%, rgb(248 238 218 / 94%) 84%, transparent);
+  mask-image: linear-gradient(transparent, #000 30%, #000 75%, transparent);
+}
+@media (max-width: 700px) {
+  .books-shell .site-header::before {
+    inset-inline: -8px;
+    background: linear-gradient(90deg, transparent, rgb(248 238 218 / 95%) 20px, rgb(248 238 218 / 95%) calc(100% - 20px), transparent);
+    mask-image: linear-gradient(#000 60%, rgb(0 0 0 / 90%) 76%, transparent);
+  }
+  .books-shell .back-link::before { inset-inline: -8px; }
+  .books-shell .site-footer::before { inset-inline: -8px; }
+}
+@media (min-width: 1800px) {
+  .books-list-shell { padding-inline: max(144px, calc((100vw - 1440px) / 2)); }
+}
+@media (max-width: 1100px) {
+  .books-list-shell { padding-inline: 4vw; }
+  .books-list-shell .book-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .books-list-shell .recommendation-columns { grid-template-columns: 1fr; }
+  .books-list-shell .recommendation-group .book-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .books-list-shell .book-cover-label { font-size: 24px; }
+}
+@media (max-width: 700px) {
+  .books-list-shell { padding-inline: 18px; }
+  .books-shell::before { background-image: url("./assets/books/study-mobile.webp"); }
+  .books-shell .site-header { padding: 12px 0 8px; justify-content: center; gap: 8px; }
+  .books-shell .site-identity { width: 100%; justify-content: center; gap: 8px 12px; }
+  .books-shell .brand { font-size: 20px; gap: 9px; letter-spacing: .02em; }
+  .books-shell .home-brand-mark { width: 27px; height: 29px; font-size: 21px; }
+  .books-shell .stage-label { font-size: 13px; }
+  .books-shell .site-nav { width: 100%; justify-content: center; gap: 28px; }
+  .books-shell .site-nav a { font-size: 16px; }
+  .books-list-shell main { padding: 18px 0 24px; }
+  .books-shell .back-link { font-size: 16px; min-height: 36px; }
+  .books-list-shell h1 { font-size: 34px; }
+  .books-list-shell .books-page > p:first-child {
+    position: relative; isolation: isolate; font-size: 16px; text-align: left;
+    margin: 6px 0 22px; padding: 8px 12px 10px; background: transparent;
+  }
+  .books-list-shell .books-page > p:first-child::before {
+    content: ""; position: absolute; inset: -6px -10px -8px; z-index: -1; pointer-events: none;
+    background:
+      linear-gradient(rgb(250 242 224 / 84%), rgb(250 242 224 / 84%)),
+      var(--books-paper) center / 520px repeat;
+    -webkit-mask-image:
+      linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent),
+      linear-gradient(transparent, #000 14%, #000 84%, transparent);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent),
+      linear-gradient(transparent, #000 14%, #000 84%, transparent);
+    mask-composite: intersect;
+  }
+  .books-list-shell .books-reading-clues,
+  .books-list-shell .books-results:not(.has-recommendations),
+  .books-list-shell .recommendation-group { padding: 18px 14px; }
+  .books-list-shell .books-filter-row { grid-template-columns: 1fr; gap: 15px; }
+  .books-list-shell .filter-options { gap: 6px; }
+  .books-list-shell .filter-options button { flex: 1 1 auto; padding: 7px 6px; font-size: 15px; }
+  .books-list-shell .book-filters legend { font-size: 17px; }
+  .books-list-shell .recommendation-form legend { font-size: 23px; }
+  .books-list-shell .selection-grid { grid-template-columns: 1fr; gap: 12px; }
+  .books-list-shell .selection-grid select { font-size: 16px; padding-inline: 8px; }
+  .books-list-shell .record-actions button { flex: 1 1 auto; font-size: 17px; padding-inline: 12px; }
+  .books-list-shell .scope-note { font-size: 13px; }
+  .books-list-shell .book-grid, .books-list-shell .recommendation-group .book-grid { grid-template-columns: 1fr; gap: 24px; }
+  .books-list-shell .book-card { display: flow-root; }
+  .books-list-shell .book-card-copy { display: block; }
+  .books-list-shell .match-reason { clear: both; }
+  .books-list-shell .book-card + .book-card { border-top: 1px solid #d1b996; padding-top: 24px; }
+  .books-list-shell .book-cover-link { float: left; width: 34%; margin: 4px 15px 12px 0; }
+  .books-list-shell .book-cover { aspect-ratio: .57; }
+  .books-list-shell .book-cover-label { left: 15%; font-size: clamp(12px, 3.8vw, 17px); line-height: 1.2; padding: 6px 3px; border-width: 1px; }
+  .books-list-shell .book-cover-author { font-size: 9px; line-height: 1.3; left: 15%; right: 16%; }
+  .books-list-shell .book-cover::before { inset: 5px 8px 5px 6px; }
+  .books-list-shell .book-cover::after { width: 6px; }
+  .books-list-shell .book-binding { right: 4px; width: 7px; border-right-width: 1px; }
+  .books-list-shell .book-binding i { width: 10px; margin-left: -2px; }
+  .books-list-shell .book-card :is(h3, h4) { font-size: 23px; }
+  .books-list-shell .book-types { font-size: 13px; line-height: 1.6; }
+  .books-list-shell .book-author { font-size: 15px; }
+  .books-list-shell .match-reason, .books-list-shell .book-card-copy > p:not([class]) { font-size: 15px; line-height: 1.75; }
+  .books-list-shell .book-list-heading h2, .books-list-shell .recommendation-group > h3 { font-size: 27px; }
+  .books-list-shell .book-list-heading p { font-size: 14px; }
+  .books-list-shell .recommendation-conditions { font-size: 15px; padding: 12px 14px; }
+  .books-shell .site-footer { font-size: 14px; line-height: 1.9; }
+}
+@media (max-width: 360px) {
+  .books-list-shell { padding-inline: 12px; }
+  .books-shell .stage-label { display: block; width: 100%; text-align: center; }
+  .books-list-shell h1 { font-size: 30px; }
+  .books-list-shell .books-reading-clues,
+  .books-list-shell .books-results:not(.has-recommendations),
+  .books-list-shell .recommendation-group { padding-inline: 12px; }
+  .books-list-shell .book-cover-link { width: 88px; margin-right: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .books-list-shell button, .books-list-shell .book-cover { transition: none; }
+  .books-list-shell .book-cover-link:hover .book-cover,
+  .books-list-shell .book-card:focus-within .book-cover { transform: none; }
+}
+
+/* 宣纸选单覆盖内容展开，不改变书房或页面高度。 */
+.books-list-shell .paper-select { position: relative; min-width: 0; z-index: 3; }
+.books-list-shell .paper-select[data-open="true"] { z-index: 6; }
+.books-list-shell .paper-select-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; min-height: 48px; padding: 10px 12px; text-align: left;
+  border: 1px solid #bda784; border-radius: 2px; color: #2c251c; font-size: 17px;
+  background: linear-gradient(rgb(255 250 235 / 40%), rgb(255 250 235 / 40%)), var(--books-paper) center / 640px;
+}
+.books-list-shell .paper-select-trigger:hover { border-color: #987347; background-color: #f3e4c7; }
+.books-list-shell .paper-select-trigger[aria-expanded="true"] { border-color: #9c3025; }
+.books-list-shell .paper-select-trigger[aria-invalid="true"] { border-color: #9c3025; }
+.books-list-shell .paper-select-value, .books-list-shell .paper-select-placeholder { min-width: 0; }
+.books-list-shell .paper-select-placeholder { color: #68553e; }
+.books-list-shell .paper-select-arrow { flex: 0 0 auto; color: #735439; transition: transform 240ms cubic-bezier(.22, 1, .36, 1); }
+.books-list-shell .paper-select[data-open="true"] .paper-select-arrow { transform: rotate(180deg); color: #9c3025; }
+.books-list-shell .paper-select-menu {
+  position: absolute; top: calc(100% + 7px); left: 0; right: 0; padding: 6px;
+  max-height: var(--paper-select-room); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  border: 1px solid #bda784; border-radius: 2px;
+  background: linear-gradient(rgb(255 250 235 / 56%), rgb(255 250 235 / 56%)), var(--books-paper) center / 640px;
+  box-shadow: 0 10px 22px rgb(69 45 23 / 17%); scrollbar-width: thin; scrollbar-color: #b59a76 #f6ecd8;
+  visibility: hidden; pointer-events: none; opacity: 0;
+  clip-path: inset(0 0 100% 0); transform: translateY(-3px);
+  transition: clip-path 180ms cubic-bezier(.4, 0, .2, 1), opacity 150ms ease-out, transform 180ms ease-out, visibility 0s linear 180ms;
+}
+.books-list-shell .paper-select[data-placement="above"] .paper-select-menu {
+  top: auto; bottom: calc(100% + 7px); clip-path: inset(100% 0 0 0); transform: translateY(3px);
+}
+.books-list-shell .paper-select[data-open="true"] .paper-select-menu {
+  visibility: visible; pointer-events: auto; opacity: 1; clip-path: inset(0); transform: translateY(0);
+  transition: clip-path 260ms cubic-bezier(.22, 1, .36, 1), opacity 180ms ease-out, transform 260ms cubic-bezier(.22, 1, .36, 1), visibility 0s;
+}
+.books-list-shell .paper-select-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 46px; padding: 10px 12px; font-size: 17px; line-height: 1.6; cursor: pointer;
+  color: #33291e; border-radius: 1px; transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+.books-list-shell .paper-select-option + .paper-select-option { border-top: 1px solid rgb(178 148 103 / 18%); }
+.books-list-shell .paper-select-option[data-active="true"] { background: #eedcba; color: #7e3022; }
+.books-list-shell .paper-select-option[aria-selected="true"] { color: #912f23; font-weight: 700; }
+.books-list-shell .paper-select-check { flex-shrink: 0; opacity: 0; color: #a63024; }
+.books-list-shell .paper-select-option[aria-selected="true"] .paper-select-check { opacity: 1; }
+@media (max-width: 700px) {
+  .books-list-shell .paper-select-trigger, .books-list-shell .paper-select-option { font-size: 16px; padding-inline: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .books-list-shell .paper-select[data-open] :is(.paper-select-menu, .paper-select-arrow, .paper-select-option) { transition: none; }
+  .books-list-shell .paper-select[data-placement] .paper-select-menu { transform: none; }
+}

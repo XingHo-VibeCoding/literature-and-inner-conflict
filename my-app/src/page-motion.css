@@ -1,0 +1,75 @@
+/* Day 29：旧画卷只覆盖背景层，真实导航和内容仍可直接操作。 */
+.page-background-veil {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: -1;
+  pointer-events: none;
+  isolation: isolate;
+}
+/* 连续切换保留上一次尚未淡完的背景，统一随外层淡出后清理。 */
+.page-background-veil .page-background-veil { z-index: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .page-background-veil { display: none; }
+}
+
+/* 三大页面共用正文基线；书本详情也沿用同一顶栏与左右边距。 */
+html:has(.app-shell:is(.home-shell, .journal-shell, .books-shell)) { scrollbar-gutter: stable; }
+.app-shell:is(.home-shell, .journal-shell, .books-shell) {
+  padding-inline: clamp(24px, 6.5vw, 116px);
+  --page-heading-offset: 104px;
+}
+.app-shell:is(.home-shell, .journal-shell, .books-shell) .site-header {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  gap: 14px; padding: 10px 0;
+}
+.app-shell:is(.home-shell, .journal-shell, .books-shell) .site-identity {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 14px 24px; width: auto;
+}
+.app-shell:is(.home-shell, .journal-shell, .books-shell) .brand {
+  font: 700 25px / 1.4 var(--home-display-font); letter-spacing: .06em; gap: 12px;
+}
+.app-shell:is(.home-shell, .journal-shell, .books-shell) .home-brand-mark {
+  width: 34px; height: 36px; font-size: 25px;
+}
+.app-shell:is(.home-shell, .journal-shell, .books-shell) .stage-label {
+  display: block; width: auto; margin: 0; padding: 0; border: 0;
+  font-size: 15px; line-height: 1.7; letter-spacing: .08em;
+}
+.app-shell:is(.home-shell, .journal-shell, .books-shell) .site-nav {
+  display: flex; flex-wrap: nowrap; gap: 25px; width: auto;
+  padding: 0; border: 0; min-height: 44px;
+}
+.app-shell:is(.home-shell, .journal-shell, .books-shell) .site-nav a {
+  padding: 0 6px; font-size: 18px; line-height: 1.5; min-height: 44px;
+  text-underline-offset: 11px;
+}
+.app-shell:is(.journal-shell, .books-list-shell) > main {
+  padding-top: calc(var(--page-heading-offset) - 44px);
+}
+.app-shell:is(.journal-shell, .books-list-shell) .section-page > .back-link {
+  display: flex; align-items: center; height: 44px; min-height: 44px;
+  margin: 0; padding: 0 6px; width: fit-content;
+}
+@media (max-width: 1000px) and (min-width: 761px) {
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) .stage-label { display: none; }
+}
+@media (max-width: 760px) {
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) { padding-inline: 20px; }
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) .site-header {
+    grid-template-columns: 1fr; justify-items: center; gap: 6px; padding: 12px 0 8px;
+  }
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) .site-identity {
+    display: grid; grid-template-columns: 1fr; justify-items: center; gap: 3px; width: 100%;
+  }
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) .brand { font-size: 20px; gap: 10px; }
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) .home-brand-mark { width: 27px; height: 29px; font-size: 21px; }
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) .stage-label { font-size: 12px; }
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) .site-nav { width: 100%; justify-content: center; gap: 28px; }
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) .site-nav a { font-size: 16px; }
+}
+@media (max-width: 700px) {
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) { --page-heading-offset: 67.2px; }
+}
+@media (max-width: 420px) {
+  .app-shell:is(.home-shell, .journal-shell, .books-shell) { padding-inline: 16px; }
+}

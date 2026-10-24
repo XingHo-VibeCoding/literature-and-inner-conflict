@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { useAutoHeightMotion } from './usePanelMotion.js';
 
 const emptyState = { status: 'idle', message: '' };
 const usernamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{1,47}$/;
@@ -37,9 +38,10 @@ export default function AccountPanel({
   const errorMessage = localError || (state.status === 'error' ? externalMessage : '');
   const statusMessage = state.status !== 'error' ? externalMessage : '';
   const isRegister = mode === 'register';
+  const panelRef = useAutoHeightMotion([expanded, mode, errorMessage, statusMessage, signedIn]);
 
   useEffect(() => {
-    if (expanded && !signedIn) usernameRef.current?.focus();
+    if (expanded && !signedIn) usernameRef.current?.focus({ preventScroll: true });
   }, [expanded, mode, signedIn]);
 
   useEffect(() => {
@@ -104,7 +106,7 @@ export default function AccountPanel({
     clearError();
     setExpanded(false);
     onCancel?.();
-    triggerRef.current?.focus();
+    triggerRef.current?.focus({ preventScroll: true });
   }
 
   async function submit(event) {
@@ -115,7 +117,7 @@ export default function AccountPanel({
     if (!usernamePattern.test(normalizedUsername)) {
       setLocalError('用户名需为 2–48 位，以字母或数字开头，仅可包含字母、数字、点、下划线和短横线。');
       setErrorField('username');
-      usernameRef.current?.focus();
+      usernameRef.current?.focus({ preventScroll: true });
       return;
     }
     if (!password) {
@@ -157,7 +159,7 @@ export default function AccountPanel({
   }
 
   if (signedIn) {
-    return <section className="home-account home-account-signed-in" aria-label="我的账号">
+    return <section ref={panelRef} className="home-account home-account-signed-in" aria-label="我的账号">
       <div className="home-account-session">
         <p role="status" aria-live="polite">已登录</p>
         <button type="button" className="home-account-logout" disabled={unavailable}
@@ -168,7 +170,7 @@ export default function AccountPanel({
     </section>;
   }
 
-  return <section className="home-account" aria-label="我的账号">
+  return <section ref={panelRef} className="home-account" aria-label="我的账号">
     <div className="home-account-heading">
       <p>登录后，接着写自己的故事。</p>
       <button ref={triggerRef} type="button" className="home-account-toggle"
