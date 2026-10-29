@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { countCharacters, validateNote } from '../../shared/validation.js';
-import { appendNote, deleteHistoryNote, setNoteInSummary } from '../services/localStore.js';
+import { useAccountSession } from '../components/AccountSession.jsx';
 import { sortNoteHistory } from '../services/readingModel.js';
-import { runTemporaryFavoriteAction } from '../services/temporaryFavorite.js';
 
 export default function BookReadingPanel({ book, favorite, notes, onFavoriteChange, onNotesChange, onReload, onDraftChange }) {
+  const { data, signedIn, busy: accountBusy } = useAccountSession();
+  const mounted = useRef(false);
   const savedNotes = sortNoteHistory(notes);
   const savedNote = savedNotes[0] || null;
   const olderNotes = savedNotes.slice(1);
@@ -38,7 +39,13 @@ export default function BookReadingPanel({ book, favorite, notes, onFavoriteChan
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [dirty, processing, onDraftChange]);
 
-  useEffect(() => () => onDraftChange({ dirty: false, saving: false }), [onDraftChange]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      onDraftChange({ dirty: false, saving: false });
+    };
+  }, [onDraftChange]);
 
   useEffect(() => {
     if (processing || !pendingFocus.current) return;
@@ -48,17 +55,22 @@ export default function BookReadingPanel({ book, favorite, notes, onFavoriteChan
   }, [processing, notes]);
 
   async function write(action, success, nextOperation) {
-    if (lock.current || favoriteLock.current) return;
+    if (!mounted.current || !signedIn || !data || lock.current || favoriteLock.current) return;
     lock.current = true;
     setBusy(true);
     setOperation(nextOperation);
     setError('');
     setMessage('');
-    try { success(await action()); }
+    try {
+      const result = await action();
+      if (mounted.current) success(result);
+    }
     catch (failure) {
-      setError(['LOCAL_VERSION_CONFLICT', 'LOCAL_NOTE_LINK_CONFLICT'].includes(failure.code) ? failure.message
-        : '本地写入未完成，请重试。当前输入与上次成功保存的状态均已保留。');
+      if (!mounted.current) return;
+      setError(['LOCAL_VERSION_CONFLICT', 'LOCAL_NOTE_LINK_CONFLICT', 'VERSION_CONFLICT', 'NOTE_LINK_CONFLICT'].includes(failure.code) ? failure.message
+        : '账户云端写入结果未确认。当前输入与上次成功读取的状态均已保留，请先重新读取核对，再决定是否重试。');
     } finally {
+      if (!mounted.current) return;
       if (!pendingFocus.current) {
         pendingFocus.current = nextOperation?.type === 'summary'
           ? () => summaryButtons.current.get(nextOperation.noteId)?.focus()
@@ -76,48 +88,50 @@ export default function BookReadingPanel({ book, favorite, notes, onFavoriteChan
     setFieldError(validation);
     setMessage('');
     if (validation) { input.current?.focus(); return; }
-    write(() => appendNote(book.id, body), (value) => {
+    write(() => data.appendNote(book.id, body), (value) => {
       onNotesChange((current) => [...current, value]);
       setBody('');
       setHistoryOpen(false);
       pendingFocus.current = () => input.current?.focus();
-      setMessage('阅读备注与感悟已保存为新的一条，原文和保存时间已保留。');
+      setMessage('阅读备注与感悟已保存到账户云端，新增为一条独立记录，原文和保存时间已保留。');
     }, { type: 'save' });
   }
 
   async function toggleFavorite() {
-    if (favoriteLock.current || lock.current) return;
+    if (!mounted.current || !signedIn || !data || favoriteLock.current || lock.current) return;
     const wasFavorite = favorite;
     favoriteLock.current = true;
     setFavoriteBusy(true);
     setError('');
     setMessage('');
     try {
-      await runTemporaryFavoriteAction();
+      await data.setFavorite(book.id, !wasFavorite);
+      if (!mounted.current) return;
       onFavoriteChange(book.id, !wasFavorite);
       setMessage(wasFavorite
         ? `已取消收藏《${book.title}》。`
-        : `已收藏《${book.title}》，刷新页面后会重置。`);
+        : `已收藏《${book.title}》，已保存到账户云端。`);
     } catch {
+      if (!mounted.current) return;
       setError(wasFavorite
-        ? '取消收藏失败：仍保持已收藏，请重试。'
-        : '收藏失败：当前仍未收藏，请重试。');
+        ? '取消收藏失败：结果未确认，页面保留已收藏状态，请重新读取后核对。'
+        : '收藏失败：结果未确认，页面保留未收藏状态，请重新读取后核对。');
     } finally {
       favoriteLock.current = false;
-      setFavoriteBusy(false);
+      if (mounted.current) setFavoriteBusy(false);
     }
   }
 
   function toggleSummary(note) {
     const enabled = !note.summaryLink?.active;
-    write(() => setNoteInSummary(note.id, enabled, note.revision), (result) => {
+    write(() => data.setNoteInSummary(note.id, enabled, note.revision), (result) => {
       onNotesChange((current) => current.map((item) => item.id === result.note.id ? result.note : item));
       const messages = {
         added: '已保存到总结库，刷新后仍会保留；再次点击可取消。',
         reused: '已重新关联原有总结，保留其中的内容，没有重复新建。',
         removed: '已取消保存到总结库，阅读备注与感悟仍保留。',
         'preserved-edited': '已取消这条备注的入库关联；总结中的副本已被你修改，因此保留了修改后的内容。',
-        unchanged: '这条备注的入库状态已与本地记录同步。',
+        unchanged: '这条备注的入库状态已与账户云端记录同步。',
       };
       setMessage(messages[result.outcome]);
       pendingFocus.current = () => summaryButtons.current.get(note.id)?.focus();
@@ -158,10 +172,16 @@ export default function BookReadingPanel({ book, favorite, notes, onFavoriteChan
     );
   }
 
+  if (!signedIn || !data) return <section className="reading-panel" aria-labelledby="reading-title">
+    <h2 id="reading-title">我的阅读记录</h2>
+    <p role="status">{accountBusy ? '正在核验账户，尚未读取个人阅读记录…' : !signedIn
+      ? '请先登录，再保存自己的阅读备注、感悟与收藏。' : '账户云端数据服务尚未正确配置，个人阅读记录未读取。'}</p>
+  </section>;
+
   return (
     <section className="reading-panel" aria-labelledby="reading-title">
       <h2 id="reading-title">我的阅读记录</h2>
-      <p className="storage-notice">阅读备注与感悟、入库状态保存在当前浏览器，刷新后仍保留。书本收藏仍只在本次打开页面期间有效。原文由你填写，不会发送给 AI。</p>
+      <p className="storage-notice">阅读备注与感悟、总结关联和书本收藏保存在当前账户的云端，刷新后会重新读取。原文由你填写，不会发送给 AI。</p>
       <div className="record-actions">
         <span aria-live="polite">{favorite ? '已收藏' : '未收藏'}</span>
         <button type="button" className="favorite-button" disabled={processing}
@@ -216,7 +236,7 @@ export default function BookReadingPanel({ book, favorite, notes, onFavoriteChan
           <button type="button" className="danger-button" onClick={() => {
             deleteDialog.current.close();
             if (!deletingNote) return;
-            write(() => deleteHistoryNote(deletingNote.id, deletingNote.revision), (id) => {
+            write(() => data.deleteHistoryNote(deletingNote.id, deletingNote.revision), (id) => {
               onNotesChange((current) => current.filter((item) => item.id !== id));
               setMessage('这条备注已删除；更早的备注、当前输入与总结库记录均保留。');
               pendingFocus.current = () => {

@@ -3,15 +3,20 @@ import assert from 'node:assert/strict';
 import React, { act } from 'react';
 import { webcrypto } from 'node:crypto';
 import { JSDOM } from 'jsdom';
-import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { createServer } from 'vite';
-import { readEntries, readNoteHistory } from '../services/localStore.js';
+import react from '@vitejs/plugin-react';
+import { createFictionalAccountApi } from './fictionalAccountApi.js';
 
 let dom;
 let server;
 let App;
 let createRoot;
 let root;
+let cloud;
+let localReads = 0;
+const AUTH_ORIGIN = 'https://fictional-reading-auth.invalid';
+const API_ORIGIN = 'https://fictional-reading-api.invalid';
+const STORAGE_KEY = 'literature.account-session.v1:' + AUTH_ORIGIN;
 const originalGlobals = new Map();
 
 function setGlobal(name, value) {
@@ -20,7 +25,7 @@ function setGlobal(name, value) {
 }
 
 before(async () => {
-  // 独立的模拟页面和内存库；不加载网络资源、不使用真人浏览器数据。
+  // 独立的模拟页面与虚构云端；不加载网络资源、不读取本机数据库或环境文件。
   dom = new JSDOM('<div id="root"></div>', {
     url: 'http://reading-flow.test.invalid/#/books/walden', pretendToBeVisual: true,
   });
@@ -29,17 +34,29 @@ before(async () => {
   setGlobal('document', dom.window.document);
   setGlobal('navigator', dom.window.navigator);
   setGlobal('crypto', httpCrypto);
-  setGlobal('indexedDB', new IDBFactory());
+  const forbiddenLocalDatabase = { open() {
+    localReads += 1;
+    throw new Error('账户页面禁止回退读取旧本地数据库。');
+  } };
+  setGlobal('indexedDB', forbiddenLocalDatabase);
+  cloud = createFictionalAccountApi({ authOrigin: AUTH_ORIGIN, apiOrigin: API_ORIGIN });
+  setGlobal('fetch', (...args) => cloud.fetch(...args));
   setGlobal('requestAnimationFrame', dom.window.requestAnimationFrame.bind(dom.window));
   setGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   Object.defineProperty(dom.window, 'crypto', { configurable: true, value: httpCrypto });
   dom.window.indexedDB = indexedDB;
+  dom.window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cloud.createSession()));
   dom.window.scrollTo = () => {};
   const dialog = dom.window.HTMLDialogElement.prototype;
   if (!dialog.showModal) dialog.showModal = function () { this.open = true; };
   if (!dialog.close) dialog.close = function () { this.open = false; };
   ({ createRoot } = await import('react-dom/client'));
-  server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' });
+  server = await createServer({ configFile: false, envDir: false, plugins: [react()],
+    server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom',
+    define: { 'import.meta.env.VITE_AUTH_ORIGIN': JSON.stringify(AUTH_ORIGIN),
+      'import.meta.env.VITE_API_ORIGIN': JSON.stringify(API_ORIGIN),
+      'import.meta.env.VITE_TEST_USER_ID': JSON.stringify('fictional-reader-a') },
+  });
   ({ default: App } = await server.ssrLoadModule('/src/App.jsx'));
 });
 
@@ -61,10 +78,10 @@ async function settleUntil(check, label) {
   assert.fail(`等待超时：${label}`);
 }
 
-async function mountApp() {
+async function mountApp(selector = '#reading-note') {
   root = createRoot(document.getElementById('root'));
   await act(async () => root.render(React.createElement(App)));
-  await settleUntil(() => document.querySelector('#reading-note'), '阅读面板读取完成');
+  await settleUntil(() => document.querySelector(selector), '账户页面读取完成');
 }
 
 function button(text, scope = document) {
@@ -99,7 +116,7 @@ async function toggleSummary(card) {
   await settleUntil(() => !toggle.disabled && toggle.getAttribute('aria-pressed') !== previous, '入库状态更新');
 }
 
-test('虚构页面完整流程：多条留存、草稿保护、持久入库、总结来源与单条删除', async () => {
+test('虚构云端页面完整流程：多条留存、草稿保护、持久入库、总结来源与单条删除', async () => {
   assert.equal(typeof crypto.randomUUID, 'undefined');
   await mountApp();
   const texts = [
@@ -118,7 +135,7 @@ test('虚构页面完整流程：多条留存、草稿保护、持久入库、�
     await settleUntil(() => !save.disabled && document.querySelector('#reading-note').value === '', '保存并清空成功的草稿');
     assert.equal(latestCard().querySelector('.entry-original').textContent, text);
     assert.equal(document.activeElement.id, 'reading-note');
-    assert.equal((await readNoteHistory('walden')).length, index + 1);
+    assert.equal(cloud.readNoteHistory('walden').length, index + 1);
   }
   assert.equal(document.querySelectorAll('.saved-note').length, 1);
   assert.equal(historyButton().getAttribute('aria-expanded'), 'false');
@@ -132,25 +149,19 @@ test('虚构页面完整流程：多条留存、草稿保护、持久入库、�
   assert.equal(historyButton().getAttribute('aria-expanded'), 'true');
   assert.deepEqual([...document.querySelectorAll('#past-reading-notes .entry-original')].map((item) => item.textContent), [texts[1], texts[0]]);
   assert.equal(document.querySelector('#reading-note').value, draft);
-  const originalPut = IDBObjectStore.prototype.put;
-  IDBObjectStore.prototype.put = function (...args) {
-    if (this.name === 'noteHistory') throw new DOMException('虚构的本地写入失败', 'QuotaExceededError');
-    return originalPut.apply(this, args);
-  };
-  try {
-    await click(summaryButton());
-    await settleUntil(() => !summaryButton().disabled && document.querySelector('.reading-panel .error-panel'), '显示真实写入失败');
-  } finally { IDBObjectStore.prototype.put = originalPut; }
+  cloud.failNextSummary();
+  await click(summaryButton());
+  await settleUntil(() => !summaryButton().disabled && document.querySelector('.reading-panel .error-panel'), '显示虚构云端503写入失败');
   assert.equal(summaryButton().getAttribute('aria-pressed'), 'false');
   assert.ok(!latestCard().classList.contains('is-in-summary'));
   assert.equal(document.querySelector('#reading-note').value, draft);
-  assert.equal((await readEntries()).length, 0);
+  assert.equal(cloud.readEntries().length, 0);
   await toggleSummary(latestCard());
   assert.equal(summaryButton().getAttribute('aria-pressed'), 'true');
   assert.ok(latestCard().classList.contains('is-in-summary'));
   assert.equal(document.querySelector('#reading-note').value, draft);
   assert.equal(document.activeElement, summaryButton());
-  assert.equal((await readEntries()).length, 1);
+  assert.equal(cloud.readEntries().length, 1);
 
   await click(document.querySelector('.site-nav a[href="#/journal"]'));
   const leave = document.querySelector('dialog[aria-labelledby="leave-title"]');
@@ -166,7 +177,7 @@ test('虚构页面完整流程：多条留存、草稿保护、持久入库、�
   await mountApp();
   assert.equal(summaryButton().getAttribute('aria-pressed'), 'true');
   assert.equal(document.querySelectorAll('.saved-note').length, 1);
-  assert.equal((await readNoteHistory('walden')).length, 3);
+  assert.equal(cloud.readNoteHistory('walden').length, 3);
 
   await click(document.querySelector('.site-nav a[href="#/journal"]'));
   await settleUntil(() => document.querySelector('.journal-shell .saved-entry'), '总结页显示导入的原文');
@@ -188,20 +199,20 @@ test('虚构页面完整流程：多条留存、草稿保护、持久入库、�
   assert.equal(document.querySelector('#reading-note').value, draft);
   assert.equal(summaryButton().getAttribute('aria-pressed'), 'false');
   assert.ok(!latestCard().classList.contains('is-in-summary'));
-  assert.equal((await readEntries())[0].text, edited);
+  assert.equal(cloud.readEntries()[0].text, edited);
   assert.ok(document.querySelector('.success-message').textContent.includes('保留了修改后的内容'));
   await toggleSummary(latestCard());
   await toggleSummary(latestCard());
-  assert.equal((await readEntries()).length, 1);
-  assert.equal((await readEntries())[0].text, edited);
+  assert.equal(cloud.readEntries().length, 1);
+  assert.equal(cloud.readEntries()[0].text, edited);
 
   await click(historyButton());
   const firstCard = [...document.querySelectorAll('#past-reading-notes .saved-note')]
     .find((card) => card.querySelector('.entry-original').textContent === texts[0]);
   await toggleSummary(firstCard);
-  assert.equal((await readEntries()).length, 2);
+  assert.equal(cloud.readEntries().length, 2);
   await toggleSummary(firstCard);
-  assert.equal((await readEntries()).length, 1);
+  assert.equal(cloud.readEntries().length, 1);
   assert.equal(document.querySelector('#reading-note').value, draft);
 
   for (let remaining = 2; remaining >= 0; remaining -= 1) {
@@ -212,13 +223,13 @@ test('虚构页面完整流程：多条留存、草稿保护、持久入库、�
     await settleUntil(() => !button('保存备注与感悟').disabled
       && document.querySelectorAll('.saved-note').length === (remaining ? (remaining > 1 ? 2 : 1) : 0), '删除后更新原文卡');
     assert.equal(document.querySelector('#reading-note').value, draft);
-    assert.equal((await readNoteHistory('walden')).length, remaining);
+    assert.equal(cloud.readNoteHistory('walden').length, remaining);
     if (remaining) {
       assert.equal(latestCard().querySelector('.entry-original').textContent, texts[remaining - 1]);
       assert.equal(document.activeElement, latestCard().querySelector('[id^="note-title-"]'));
     } else assert.equal(document.activeElement.id, 'reading-note');
   }
-  assert.equal((await readEntries())[0].text, edited);
+  assert.equal(cloud.readEntries()[0].text, edited);
 
   // 同一公网 HTTP 模拟环境中回归 Day 14 原有的推荐生成和详情跳转修复。
   await fill(document.querySelector('#reading-note'), '');
@@ -286,4 +297,71 @@ test('虚构页面完整流程：多条留存、草稿保护、持久入库、�
   await settleUntil(() => document.querySelector('[aria-label="本次推荐理由"]'), '公网 HTTP 推荐详情跳转');
   assert.equal(window.location.hash, '#/books/walden');
   assert.ok(document.querySelector('[aria-label="本次推荐理由"]').textContent.includes('映照当下'));
+  assert.equal(localReads, 0, '完整账户流程不读取或清理旧本地数据库');
+});
+
+test('虚构云端页面恢复书本与日总结收藏、保留demo采纳标记，并隔离第二账户', async () => {
+  if (root) await act(async () => root.unmount());
+  root = null;
+  cloud = createFictionalAccountApi({ authOrigin: AUTH_ORIGIN, apiOrigin: API_ORIGIN });
+  window.localStorage.clear();
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cloud.createSession()));
+  window.history.replaceState(null, '', '#/books/walden');
+  await mountApp();
+  await click(button('收藏', document.querySelector('.reading-panel')));
+  await settleUntil(() => cloud.readFavorites().some(item => item.targetType === 'book')
+    && [...document.querySelectorAll('.reading-panel button')].some(item => item.textContent === '已收藏'), '书本收藏保存云端');
+  await act(async () => root.unmount());
+  root = null;
+  await mountApp();
+  assert.equal(button('已收藏', document.querySelector('.reading-panel')).getAttribute('aria-pressed'), 'true');
+
+  await click(document.querySelector('.site-nav a[href="#/journal"]'));
+  await settleUntil(() => document.querySelector('#entry-text'), '空账户的日精进编辑器');
+  await click(button('填写虚构示例'));
+  const original = document.querySelector('#entry-text').value;
+  const entryDate = document.querySelector('#entry-date').value;
+  await click(button('保存日精进'));
+  await settleUntil(() => document.querySelector('.saved-entry') && cloud.readEntries().length === 1, '虚构日精进云端保存');
+  await click(button('收藏日总结'));
+  await settleUntil(() => cloud.readFavorites().some(item => item.targetType === 'entry')
+    && !document.querySelector('.saved-entry .favorite-button').disabled, '日总结收藏保存云端');
+  await click(button('载入固定演示草稿'));
+  await settleUntil(() => document.querySelector('#analysis-summary'), '载入固定演示草稿');
+  const summary = '【虚构】我先写下问题，再尝试向同学表达，愿意保留这次小行动。';
+  await fill(document.querySelector('#analysis-summary'), summary);
+  await click(button('采纳并保存演示分析'));
+  await settleUntil(() => document.querySelector('.adopted-analysis')?.textContent.includes(summary), '采纳演示分析到云端');
+  const saved = cloud.readEntries()[0];
+  assert.equal(saved.text, original);
+  assert.equal(saved.entryDate, entryDate);
+  assert.equal(saved.adoptedAnalysis.source, 'demo');
+  assert.equal(saved.adoptedAnalysis.summary, summary);
+  assert.equal(saved.adoptedAnalysis.demoId, 'discussion-v1');
+
+  await act(async () => root.unmount());
+  root = null;
+  await mountApp('.saved-entry');
+  assert.equal(button('已收藏', document.querySelector('.saved-entry')).getAttribute('aria-pressed'), 'true');
+  assert.ok(document.querySelector('.adopted-analysis').textContent.includes('非真实 AI 生成'));
+  assert.ok(document.querySelector('.adopted-analysis').textContent.includes(summary));
+
+  const secondSession = JSON.stringify(cloud.createSession('fictional-reader-b'));
+  await act(async () => {
+    window.localStorage.setItem(STORAGE_KEY, secondSession);
+    window.dispatchEvent(new dom.window.StorageEvent('storage', { key: STORAGE_KEY, newValue: secondSession }));
+  });
+  await settleUntil(() => document.querySelector('#entry-text') && document.querySelector('.home-account-signed-in'), '第二账户读取为空');
+  assert.equal(document.querySelector('.saved-entry'), null);
+  assert.equal(cloud.readEntries('fictional-reader-b').length, 0);
+  assert.equal(cloud.readFavorites('fictional-reader-b').length, 0);
+  assert.equal(cloud.readEntries().length, 1, '第二账户不会清除第一账户的记录');
+  assert.ok(!document.body.textContent.includes(summary));
+  await click(document.querySelector('.site-nav a[href="#/books"]'));
+  await settleUntil(() => document.querySelector('.book-card a[href="#/books/walden"]'), '第二账户公共书库可浏览');
+  await click(document.querySelector('.book-card a[href="#/books/walden"]'));
+  await settleUntil(() => document.querySelector('#reading-note'), '第二账户阅读面板');
+  assert.equal(button('收藏', document.querySelector('.reading-panel')).getAttribute('aria-pressed'), 'false');
+  assert.equal(document.querySelector('.reading-panel .saved-note'), null);
+  assert.equal(localReads, 0, '第二账户也不读取旧本地数据库');
 });

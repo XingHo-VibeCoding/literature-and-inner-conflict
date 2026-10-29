@@ -8,6 +8,7 @@ import react from '@vitejs/plugin-react';
 let dom;
 let server;
 let HomePage;
+let AccountSessionProvider;
 let createRoot;
 let root;
 let mode;
@@ -88,9 +89,13 @@ before(async () => {
     define: {
       'import.meta.env.VITE_API_ORIGIN': JSON.stringify('https://day20-api.test.invalid'),
       'import.meta.env.VITE_TEST_USER_ID': JSON.stringify(fakeUserId),
+      'import.meta.env.VITE_AUTH_ORIGIN': JSON.stringify('https://fictional-day30-dev-auth.invalid'),
     },
   });
-  ({ default: HomePage } = await server.ssrLoadModule('/src/pages/HomePage.jsx'));
+  const { default: HomeWorkspace } = await server.ssrLoadModule('/src/pages/HomePage.jsx');
+  ({ AccountSessionProvider } = await server.ssrLoadModule('/src/components/AccountSession.jsx'));
+  // 使用生产容器，但每次挂载均新建会话；DEV 凭据仍不进入持久存储。
+  HomePage = () => React.createElement(AccountSessionProvider, null, React.createElement(HomeWorkspace));
 });
 
 beforeEach(async () => {

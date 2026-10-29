@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { countCharacters, localToday, validateEntry } from '../../shared/validation.js';
-import { createEntry, deleteEntry, readEntries, updateEntry } from '../services/localStore.js';
+import { useAccountSession } from '../components/AccountSession.jsx';
 import { sortEntries } from '../services/entryModel.js';
 import { DEMO_ENTRY_TEXT, isDemoEntry } from '../services/analysisModel.js';
-import { runTemporaryFavoriteAction } from '../services/temporaryFavorite.js';
 import AnalysisPanel from './AnalysisPanel.jsx';
 import { useJournalPanelMotion } from '../components/useJournalMotion.js';
 
@@ -15,6 +14,8 @@ const historyStateOptions = [
 ];
 
 export default function JournalPage({ onDraftChange }) {
+  const { data, signedIn, busy: accountBusy } = useAccountSession();
+  const mounted = useRef(false);
   const baseline = useRef({ entryDate: localToday(), text: '' });
   const [entryDate, setEntryDate] = useState(baseline.current.entryDate);
   const [text, setText] = useState('');
@@ -54,7 +55,7 @@ export default function JournalPage({ onDraftChange }) {
   const showJournalWorkspace = actualHistoryReady && historyPreview === null;
   const visibleHistoryCount = historyState === 'success' ? entries.length : historyState === 'empty' ? 0 : null;
   const historyErrorMessage = historyPreview === 'error'
-    ? '这是一次请求失败演示。这不代表记录为空，也不会清除当前浏览器里已经保存的记录。'
+    ? '这是一次请求失败演示。这不代表记录为空，也不会清除账户中已经保存的记录。'
     : readError;
 
   const recordMotion = useJournalPanelMotion([mode, selectedId, entry?.revision, historyState, entries.length, favoriteFeedback?.message]);
@@ -70,24 +71,46 @@ export default function JournalPage({ onDraftChange }) {
   }
 
   useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      onDraftChange({ dirty: false, saving: false });
+    };
+  }, [onDraftChange]);
+
+  useEffect(() => {
     let active = true;
+    if (!signedIn) {
+      setEntries([]);
+      setFavoriteEntryIds(new Set());
+      setSelectedId(null);
+      setLoading(accountBusy);
+      setReadError('');
+      return () => { active = false; };
+    }
+    if (!data) {
+      setLoading(false);
+      setReadError('账户云端数据服务尚未正确配置，个人记录未读取。请联系站点维护者。');
+      return () => { active = false; };
+    }
     setLoading(true);
     setReadError('');
     setNotice('');
-    readEntries().then((saved) => {
+    Promise.all([data.readEntries(), data.readFavorites()]).then(([saved, favorites]) => {
       if (!active) return;
       setEntries(saved);
+      setFavoriteEntryIds(new Set(favorites.filter((item) => item.targetType === 'entry').map((item) => item.targetId)));
       setSelectedId((current) => saved.some((item) => item.id === current) ? current : saved[0]?.id || null);
       setMode(saved.length ? 'view' : 'new');
       setEditBase(null);
       resetForm();
     }).catch(() => {
-      if (active) setReadError('暂时无法读取此浏览器的记录。这不代表记录为空，原有数据不会被清除，请稍后重试。');
+      if (active) setReadError('暂时无法读取账户的云端记录与收藏。这不代表记录为空，原有数据不会被清除，请稍后重试。');
     }).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [loadAttempt]);
+  }, [loadAttempt, data, signedIn, accountBusy]);
 
   useEffect(() => {
     onDraftChange({ dirty, saving: busy });
@@ -104,8 +127,10 @@ export default function JournalPage({ onDraftChange }) {
   }, [dirty, busy]);
 
   useEffect(() => {
-    if (confirmation) dialog.current.showModal();
-    else dialog.current.close();
+    const activeDialog = dialog.current;
+    if (!activeDialog) return;
+    if (confirmation) activeDialog.showModal();
+    else activeDialog.close();
   }, [confirmation]);
 
   function applyAction(action) {
@@ -142,23 +167,24 @@ export default function JournalPage({ onDraftChange }) {
   }
 
   function requestAction(action) {
-    if (submitting.current || analysisState.saving) return;
+    if (!mounted.current || !signedIn || submitting.current || analysisState.saving) return;
     if (dirty) setConfirmation({ kind: 'discard', action });
     else applyAction(action);
   }
 
   function reportFailure(error, fallback) {
-    setOperationError(error.code === 'LOCAL_VERSION_CONFLICT' ? error.message : fallback);
+    setOperationError(['LOCAL_VERSION_CONFLICT', 'VERSION_CONFLICT', 'NOTE_LINK_CONFLICT'].includes(error.code) ? error.message : fallback);
   }
 
   async function toggleFavorite(target) {
-    if (favoriteLock.current || busy) return;
+    if (!mounted.current || !signedIn || !data || favoriteLock.current || busy) return;
     const wasFavorite = favoriteEntryIds.has(target.id);
     favoriteLock.current = true;
     setFavoriteAction({ entryId: target.id, removing: wasFavorite });
     setFavoriteFeedback(null);
     try {
-      await runTemporaryFavoriteAction();
+      await data.setEntryFavorite(target.id, !wasFavorite);
+      if (!mounted.current) return;
       setFavoriteEntryIds((current) => {
         const next = new Set(current);
         if (wasFavorite) next.delete(target.id);
@@ -170,32 +196,34 @@ export default function JournalPage({ onDraftChange }) {
         type: 'success',
         message: wasFavorite
           ? `已取消收藏 ${target.entryDate} 的日总结。`
-          : `已收藏 ${target.entryDate} 的日总结，刷新页面后会重置。`,
+          : `已收藏 ${target.entryDate} 的日总结，已保存到账户云端。`,
       });
     } catch {
+      if (!mounted.current) return;
       setFavoriteFeedback({
         entryId: target.id,
         type: 'error',
         message: wasFavorite
-          ? '取消收藏失败：这条日总结仍保持已收藏，请重试。'
-          : '收藏失败：这条日总结仍未收藏，请重试。',
+          ? '取消收藏失败：结果未确认，页面保留已收藏状态，请刷新云端记录核对。'
+          : '收藏失败：结果未确认，页面保留未收藏状态，请刷新云端记录核对。',
       });
     } finally {
       favoriteLock.current = false;
-      setFavoriteAction(null);
+      if (mounted.current) setFavoriteAction(null);
     }
   }
 
   async function save(input) {
-    if (submitting.current) return;
+    if (!mounted.current || !signedIn || !data || submitting.current) return;
     submitting.current = true;
     setWorking(true);
     setOperationError('');
     setNotice('');
     try {
       const saved = mode === 'edit'
-        ? await updateEntry(editBase.id, input, editBase.revision)
-        : await createEntry(input);
+        ? await data.updateEntry(editBase.id, input, editBase.revision)
+        : await data.createEntry(input);
+      if (!mounted.current) return;
       setEntries((current) => sortEntries([...current.filter((item) => item.id !== saved.id), saved]));
       setSelectedId(saved.id);
       setMode('view');
@@ -203,20 +231,20 @@ export default function JournalPage({ onDraftChange }) {
       resetForm();
       setNotice(mode === 'edit'
         ? editBase.adoptedAnalysis && input.text !== editBase.text
-          ? '保存成功：原文修改已保存在当前浏览器；因原文变化，旧分析已清除，可重新核对分析。'
-          : '保存成功：修改已保存在当前浏览器，原记录已更新。'
-        : '保存成功：这条日精进已保存在当前浏览器。');
+          ? '保存成功：原文修改已保存到账户云端；因原文变化，旧分析已清除，可重新核对分析。'
+          : '保存成功：修改已保存到账户云端，原记录已更新。'
+        : '保存成功：这条日精进已保存到账户云端。');
     } catch (error) {
-      reportFailure(error, '保存失败：本次输入仍保留在页面中。请检查浏览器存储是否可用，或稍后重试；此前保存的内容不会被覆盖。');
+      if (mounted.current) reportFailure(error, '保存失败：本次输入仍保留在页面中。请检查网络后重新读取核对，再决定是否重试；未确认保存成功。');
     } finally {
       submitting.current = false;
-      setWorking(false);
+      if (mounted.current) setWorking(false);
     }
   }
 
   function handleSave(event) {
     event.preventDefault();
-    if (submitting.current) return;
+    if (!mounted.current || !signedIn || !data || submitting.current) return;
     const input = { entryDate, text };
     const nextErrors = validateEntry(input);
     setErrors(nextErrors);
@@ -228,13 +256,14 @@ export default function JournalPage({ onDraftChange }) {
   }
 
   async function remove(target) {
-    if (submitting.current) return;
+    if (!mounted.current || !signedIn || !data || submitting.current) return;
     submitting.current = true;
     setWorking(true);
     setOperationError('');
     setNotice('');
     try {
-      await deleteEntry(target.id, target.revision);
+      await data.deleteEntry(target.id, target.revision);
+      if (!mounted.current) return;
       const remaining = entries.filter((item) => item.id !== target.id);
       setFavoriteEntryIds((current) => {
         const next = new Set(current);
@@ -246,12 +275,12 @@ export default function JournalPage({ onDraftChange }) {
       setSelectedId(remaining[0]?.id || null);
       setMode(remaining.length ? 'view' : 'new');
       resetForm();
-      setNotice('记录已删除。');
+      setNotice('账户云端记录已删除。');
     } catch (error) {
-      reportFailure(error, '删除未成功，记录仍保留在页面中。请稍后重试。');
+      if (mounted.current) reportFailure(error, '删除结果未确认，页面仍保留原记录。请先重新读取核对，再决定是否重试。');
     } finally {
       submitting.current = false;
-      setWorking(false);
+      if (mounted.current) setWorking(false);
     }
   }
 
@@ -263,17 +292,20 @@ export default function JournalPage({ onDraftChange }) {
     else void remove(action.entry);
   }
 
+  if (!signedIn) return <div className="journal" data-page-ready={!accountBusy}>
+    <p role="status">{accountBusy ? '正在核验账户，尚未读取个人记录…' : '请先登录，再查看和保存自己的日精进、收藏与已采纳分析。'}</p>
+  </div>;
+
   return (
     <div className="journal" data-page-ready={!loading}>
       <div className="journal-notes">
-        <p className="journal-mode-note">{!editing && isDemoEntry(entry) ? '虚构示例 · 本地演示' : '本地记录 · 原文保留'}</p>
+        <p className="journal-mode-note">{!editing && isDemoEntry(entry) ? '虚构示例 · 固定演示' : '账户云端记录 · 原文保留'}</p>
         <div>
           <p className="storage-notice">
-            数据仅保存在当前浏览器；换设备不共享，清理浏览器数据后可能丢失。
-            同一浏览器的使用者可读取这些记录。本步操作均在本地完成，不会发送给 AI。
-            日总结收藏目前只在本次打开页面期间有效，刷新后重置。
+            日精进、日总结收藏与已采纳分析保存在当前账户的云端，登录同一账户可重新读取。
+            原文与日期保留；AI 解读单独标注。本页不会把记录发送给 AI。
           </p>
-          <p className="scope-note">按日期回看自己的想法与行动。分析目前支持虚构示例的本地演示，真实 AI 尚未接入。</p>
+          <p className="scope-note">按日期回看自己的想法与行动。分析目前支持虚构示例的固定演示，真实 AI 尚未接入。</p>
         </div>
       </div>
 
@@ -295,7 +327,7 @@ export default function JournalPage({ onDraftChange }) {
             <h2 id="history-title">{visibleHistoryCount === null ? '历史记录' : `历史记录（${visibleHistoryCount} 条）`}</h2>
             {historyState === 'loading' && <div className="history-state history-state-loading">
               <p className="history-state-heading" role="status">正在读取历史记录，请稍候……</p>
-              <p>正在查看保存在当前浏览器中的记录。</p>
+              <p>正在读取当前账户的云端记录与收藏。</p>
               <div className="history-skeleton" aria-hidden="true"><span /><span /><span /></div>
             </div>}
             {historyState === 'success' && <>
@@ -412,7 +444,7 @@ export default function JournalPage({ onDraftChange }) {
                     {working ? '正在保存，请稍候…' : mode === 'edit' ? '保存修改' : '保存日精进'}
                   </button>
                   {entries.length > 0 && <button type="button" onClick={() => requestAction({ type: 'cancel' })}>取消编辑</button>}
-                  {working && <span className="scope-note" role="status">正在将这条日精进保存到当前浏览器，请不要关闭页面。</span>}
+                  {working && <span className="scope-note" role="status">正在将这条日精进保存到账户云端，请不要关闭页面。</span>}
                 </div>
                 <p className="scope-note">请先保存原文，再查看分析。真实 AI 尚未接入；演示仅适用于“填写虚构示例”提供的固定原文。</p>
               </fieldset>
@@ -427,7 +459,7 @@ export default function JournalPage({ onDraftChange }) {
 
       {import.meta.env.DEV && <details className="history-preview-controls">
         <summary>历史列表状态演示</summary>
-        <p>只改变历史列表的显示，不会新增、修改或删除当前浏览器中的记录。刷新页面会恢复实际读取状态。</p>
+        <p>只改变历史列表的显示，不会新增、修改或删除账户中的记录。刷新页面会恢复实际读取状态。</p>
         <div className="history-preview-options" role="group" aria-label="选择历史列表演示状态">
           {historyStateOptions.map((state) => <button type="button" key={state.id}
             disabled={state.id === 'success' && actualHistoryState !== 'success'}
@@ -436,7 +468,7 @@ export default function JournalPage({ onDraftChange }) {
             {historyState === state.id && <span aria-hidden="true">✓</span>}{state.label}
           </button>)}
         </div>
-        {actualHistoryState !== 'success' && <p className="scope-note">“加载成功”需要当前浏览器中至少有一条真实记录。可以恢复实际状态后，用现有虚构示例自行保存一条再验证。</p>}
+        {actualHistoryState !== 'success' && <p className="scope-note">“加载成功”需要当前账户中至少有一条记录。可以恢复实际状态后，用现有虚构示例自行保存一条再验证。</p>}
         <button type="button" disabled={historyPreview === null} onClick={() => setHistoryPreview(null)}>恢复实际读取状态</button>
         <p className="history-preview-current" role="status">当前显示：{historyStateLabel}；实际读取：{actualHistoryStateLabel}</p>
       </details>}

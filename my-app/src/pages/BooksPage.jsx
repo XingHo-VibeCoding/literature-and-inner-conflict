@@ -3,7 +3,7 @@ import {
   bookCategories, categoryLabel, getBook, listBooks, situationTags, directionTags,
   buildRecommendations, resolveRecommendationContext,
 } from '../services/catalog.js';
-import { readReadingData } from '../services/localStore.js';
+import { useAccountSession } from '../components/AccountSession.jsx';
 import { filterPersonalBooks, sortNoteHistory } from '../services/readingModel.js';
 import BookReadingPanel from './BookReadingPanel.jsx';
 import PaperSelect from '../components/PaperSelect.jsx';
@@ -51,6 +51,7 @@ function BookReadingLeaf({ children }) {
 }
 
 export default function BooksPage({ path, browse, onBrowseChange, listPosition, detailContext, onDraftChange }) {
+  const { data, signedIn, busy: accountBusy } = useAccountSession();
   const { category, situationTagId, directionTagId, view, results, errors, notice } = browse;
   const isList = path === '/books';
   const book = isList ? null : getBook(path.slice('/books/'.length));
@@ -60,12 +61,12 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   const [openReadingField, setOpenReadingField] = useState(null);
   const [explanations, setExplanations] = useState({});
   const [explanationError, setExplanationError] = useState(null);
-  const temporaryReading = {
+  const personalReading = {
     ...reading,
     notes: reading.noteHistory,
     favorites: [...favoriteBookIds].map((bookId) => ({ bookId })),
   };
-  const books = filterPersonalBooks(listBooks(category), view, temporaryReading);
+  const books = filterPersonalBooks(listBooks(category), view, personalReading);
   const personalView = view === 'favorites' || view === 'noted';
   const viewTitle = personalViews.find((item) => item.id === view)?.label || '全部书目';
   const resolvedContext = resolveRecommendationContext(detailContext, results);
@@ -86,14 +87,25 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
 
   useEffect(() => {
     let active = true;
+    if (!signedIn) {
+      setReading({ favorites: [], notes: [], noteHistory: [], status: accountBusy ? 'loading' : 'signed-out' });
+      setFavoriteBookIds(new Set());
+      return () => { active = false; };
+    }
+    if (!data) {
+      setReading({ favorites: [], notes: [], noteHistory: [], status: 'configuration-error' });
+      return () => { active = false; };
+    }
     setReading((previous) => ({ ...previous, status: 'loading' }));
-    readReadingData().then((data) => {
-      if (active) setReading({ ...data, status: 'ready' });
+    data.readReadingData().then((saved) => {
+      if (!active) return;
+      setReading({ ...saved, status: 'ready' });
+      setFavoriteBookIds(new Set(saved.favorites.map((item) => item.bookId)));
     }).catch(() => {
       if (active) setReading((previous) => ({ ...previous, status: 'error' }));
     });
     return () => { active = false; };
-  }, [path, reloadKey]);
+  }, [path, reloadKey, data, signedIn, accountBusy]);
 
   useEffect(() => { setOpenReadingField(null); }, [path]);
 
@@ -107,7 +119,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
     });
   }
 
-  function updateTemporaryFavorite(bookId, favorite) {
+  function updateFavorite(bookId, favorite) {
     setFavoriteBookIds((current) => {
       const next = new Set(current);
       if (favorite) next.add(bookId);
@@ -117,9 +129,11 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
   }
 
   const readingStatus = reading.status !== 'ready' && (
-    reading.status === 'loading' ? <p role="status">正在读取阅读备注与感悟…</p> : (
+    reading.status === 'loading' ? <p role="status">{accountBusy ? '正在核验账户，尚未读取个人阅读记录…' : '正在读取账户的阅读备注、感悟与收藏…'}</p>
+      : reading.status === 'signed-out' ? <p role="status">请先登录，再查看和保存自己的阅读备注、感悟与收藏。公共书库仍可浏览。</p>
+        : reading.status === 'configuration-error' ? <p className="error-panel" role="alert">账户云端数据服务尚未正确配置，个人阅读记录未读取。公共书库仍可浏览。</p> : (
       <div className="error-panel" role="alert">
-        <p>阅读备注与感悟读取失败，原文仍保留在本地。请重新读取后再操作。</p>
+        <p>账户的阅读备注、感悟与收藏暂时没有读到。这不代表没有记录，请重新读取后再操作。</p>
         <button type="button" onClick={() => setReloadKey((value) => value + 1)}>重新读取备注与感悟</button>
       </div>
     )
@@ -319,7 +333,7 @@ export default function BooksPage({ path, browse, onBrowseChange, listPosition, 
               {reading.status === 'ready' && <BookReadingPanel key={`${book.id}:${reloadKey}`}
                 book={book} favorite={favoriteBookIds.has(book.id)}
                 notes={reading.noteHistory.filter((item) => item.bookId === book.id)}
-                onFavoriteChange={updateTemporaryFavorite} onNotesChange={updateNotes}
+                onFavoriteChange={updateFavorite} onNotesChange={updateNotes}
                 onReload={() => setReloadKey((value) => value + 1)}
                 onDraftChange={onDraftChange} />}
             </BookReadingLeaf>

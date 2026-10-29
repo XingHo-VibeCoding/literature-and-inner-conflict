@@ -6,6 +6,12 @@ const INPUT_FIELD_MESSAGES = {
   entryDate: '请填写有效且不晚于今天的记录日期。',
   text: '请填写 1 至 5000 个有效字符的原文，并检查是否含有无法保存的字符。',
   expectedRevision: '记录版本无效，请重新读取后再操作。',
+  body: '请填写 1 至 1000 个有效字符的感悟原文。',
+  summary: '总结须为 1–300 个有效字符。',
+  questions: '请填写 1–2 个反思问题，每个为 1–100 个有效字符。',
+  sourceTextVersion: '分析对应的原文版本无效，请重新读取。',
+  enabled: '请明确选择是否加入总结库。',
+  favorite: '请明确选择收藏或取消收藏。',
   'X-Client-Time-Zone': '记录时区无效，请刷新页面后重试。',
 };
 const SAFE_INPUT_FIELD_MESSAGES = {
@@ -17,7 +23,7 @@ const RESPONSE_ERROR_CODES = {
   400: ['INVALID_INPUT'],
   401: ['UNAUTHENTICATED'],
   403: ['CORS_ORIGIN_DENIED', 'CORS_METHOD_DENIED', 'CORS_HEADERS_DENIED'],
-  404: ['NOT_FOUND', 'ENTRY_NOT_FOUND', 'BOOK_NOT_FOUND'],
+  404: ['NOT_FOUND', 'ENTRY_NOT_FOUND', 'BOOK_NOT_FOUND', 'NOTE_NOT_FOUND'],
   405: ['METHOD_NOT_ALLOWED'],
   409: ['DUPLICATE_ENTRY', 'VERSION_CONFLICT', 'NOTE_LINK_CONFLICT'],
   413: ['PAYLOAD_TOO_LARGE'],
@@ -68,6 +74,7 @@ function hasExactKeys(value, keys) {
 
 function apiError(message, { code, httpStatus = null, fields, requestId = null, url } = {}) {
   const error = new Error(message);
+  error.name = 'PublicApiError';
   error.code = code;
   error.httpStatus = httpStatus;
   error.requestId = requestId;
@@ -123,6 +130,92 @@ function isEntryList(data, limit) {
     && (data.page.hasMore
       ? typeof data.page.nextCursor === 'string' && data.page.nextCursor.length > 0 && data.items.length > 0
       : data.page.nextCursor === null);
+}
+
+function isId(value) {
+  if (typeof value !== 'string' || !value || value.length > 256 || /[\u0000-\u001f\u007f]/.test(value)) return false;
+  try { encodeURIComponent(value); return true; } catch { return false; }
+}
+
+function positiveInteger(value) { return Number.isSafeInteger(value) && value >= 1; }
+
+function isText(value, maximum) {
+  return typeof value === 'string' && value.trim().length > 0 && Array.from(value.trim()).length <= maximum
+    && !value.includes('\u0000') && !Array.from(value).some(char => char.codePointAt(0) >= 0xd800 && char.codePointAt(0) <= 0xdfff);
+}
+
+function isSummaryLink(value) {
+  return value === null || (hasExactKeys(value, ['entryId', 'active', 'linkedAt', 'entryRevisionAtLink', 'preserveOnCancel'])
+    && isId(value.entryId) && typeof value.active === 'boolean' && isTimestamp(value.linkedAt)
+    && positiveInteger(value.entryRevisionAtLink) && typeof value.preserveOnCancel === 'boolean');
+}
+
+function isNote(value) {
+  return hasExactKeys(value, ['id', 'bookId', 'body', 'revision', 'createdAt', 'updatedAt', 'savedAt', 'saveOrder', 'summaryLink'])
+    && isId(value.id) && isId(value.bookId) && isText(value.body, 1000) && positiveInteger(value.revision)
+    && isTimestamp(value.createdAt) && isTimestamp(value.updatedAt) && isTimestamp(value.savedAt)
+    && positiveInteger(value.saveOrder) && isSummaryLink(value.summaryLink);
+}
+
+function isFavorite(value) {
+  return hasExactKeys(value, ['targetType', 'targetId', 'favoritedAt'])
+    && ['book', 'entry'].includes(value.targetType) && isId(value.targetId) && isTimestamp(value.favoritedAt);
+}
+
+function isList(data, limit, validate, extraKeys = []) {
+  return hasExactKeys(data, ['items', 'total', 'page', ...extraKeys])
+    && Array.isArray(data.items) && data.items.length <= limit && data.items.every(validate)
+    && Number.isSafeInteger(data.total) && data.total >= data.items.length
+    && hasExactKeys(data.page, ['limit', 'nextCursor', 'hasMore']) && data.page.limit === limit
+    && typeof data.page.hasMore === 'boolean'
+    && (data.page.hasMore ? typeof data.page.nextCursor === 'string' && data.page.nextCursor.length > 0
+      && data.items.length > 0 : data.page.nextCursor === null);
+}
+
+function pagination(limit, cursor) {
+  if (!positiveInteger(limit) || limit > 100 || (cursor !== undefined && (typeof cursor !== 'string' || !cursor))) {
+    throw apiError('分页参数无效，请重新读取第一页。', { code: 'INVALID_INPUT' });
+  }
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (cursor !== undefined) query.set('cursor', cursor);
+  return query;
+}
+
+function requireId(value, label) {
+  if (!isId(value)) throw apiError(label + '无效，请重新读取后再操作。', { code: 'INVALID_INPUT' });
+}
+
+function validateDemoInput(input) {
+  if (!hasExactKeys(input, ['expectedRevision', 'sourceTextVersion', 'summary', 'questions'])
+    || !positiveInteger(input.expectedRevision) || !positiveInteger(input.sourceTextVersion)
+    || !isText(input.summary, 300) || !Array.isArray(input.questions) || input.questions.length < 1
+    || input.questions.length > 2 || !input.questions.every(question => isText(question, 100))) {
+    throw apiError('演示分析内容或版本无效，请核对总结、反思问题与当前原文版本。', { code: 'INVALID_INPUT' });
+  }
+  return { expectedRevision: input.expectedRevision, sourceTextVersion: input.sourceTextVersion,
+    summary: input.summary, questions: [...input.questions] };
+}
+
+function isDemoAnalysis(value) {
+  return hasExactKeys(value, ['source', 'demoId', 'sourceTextVersion', 'summary', 'questions', 'adoptedAt'])
+    && value.source === 'demo' && value.demoId === 'discussion-v1' && positiveInteger(value.sourceTextVersion)
+    && isText(value.summary, 300) && Array.isArray(value.questions) && value.questions.length >= 1
+    && value.questions.length <= 2 && value.questions.every(question => isText(question, 100)) && isTimestamp(value.adoptedAt);
+}
+
+function isSummaryResult(data, noteId, enabled) {
+  if (!hasExactKeys(data, ['note', 'entry', 'outcome']) || !isNote(data.note) || data.note.id !== noteId
+    || !['unchanged', 'reused', 'added', 'preserved-edited', 'removed'].includes(data.outcome)
+    || (data.entry !== null && (!isEntry(data.entry) || data.entry.origin?.type !== 'reading-note'
+      || data.entry.origin.noteId !== noteId || data.entry.origin.bookId !== data.note.bookId))) return false;
+  const link = data.note.summaryLink;
+  if (enabled) return ['unchanged', 'reused', 'added'].includes(data.outcome) && link?.active === true
+    && data.entry !== null && data.entry.id === link.entryId;
+  if (data.outcome === 'removed') return link === null && data.entry === null;
+  if (data.outcome === 'preserved-edited') return link?.active === false && link.preserveOnCancel === true
+    && data.entry !== null && data.entry.id === link.entryId;
+  return data.outcome === 'unchanged' && !link?.active
+    && (data.entry === null || data.entry.id === link?.entryId);
 }
 
 function requireToken(token) {
@@ -185,9 +278,15 @@ export function createPublicApiClient({ apiOrigin, requestOrigin = apiOrigin, fe
     if (signal?.aborted) throw apiError('已取消本次请求。', { code: 'ABORTED', url });
     const controller = new AbortController();
     let timedOut = false;
-    const cancel = () => controller.abort();
+    let rejectCancellation;
+    const cancellation = new Promise((resolve, reject) => { rejectCancellation = reject; });
+    const cancel = () => {
+      controller.abort();
+      rejectCancellation(new Error('本次请求已终止。'));
+    };
+    const wait = promise => Promise.race([promise, cancellation]);
     signal?.addEventListener('abort', cancel, { once: true });
-    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(() => { timedOut = true; cancel(); }, REQUEST_TIMEOUT_MS);
     const headers = { Accept: 'application/json' };
     if (token !== undefined) headers.Authorization = 'Bearer ' + token;
     if (body !== undefined) {
@@ -197,24 +296,24 @@ export function createPublicApiClient({ apiOrigin, requestOrigin = apiOrigin, fe
     let httpStatus = null;
     let requestId = null;
     try {
-      const response = await fetchImpl(url, {
+      const response = await wait(fetchImpl(url, {
         method, headers, signal: controller.signal,
         credentials: 'omit', cache: 'no-store', redirect: 'error',
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      });
+      }));
       httpStatus = response.status;
       requestId = response.headers.get('x-request-id');
       // 先按 HTTP 状态识别服务故障；即使网关返回 HTML，也不当作用户输入或网络失败。
       if (httpStatus >= 500) {
         let code = 'SERVER_ERROR';
         try {
-          const failure = await response.json();
+          const failure = await wait(response.json());
           code = responseErrorCode(httpStatus, failure?.error?.code);
         } catch { /* 响应正文不可读时，仍使用固定中文服务故障提示。 */ }
         throw apiError(SERVER_ERROR_MESSAGE, { code, httpStatus, requestId, url });
       }
       let payload;
-      try { payload = await response.json(); } catch {
+      try { payload = await wait(response.json()); } catch {
         throw apiError('接口返回的内容不是有效 JSON，请核对公网路由。', {
           code: 'INVALID_RESPONSE', httpStatus, requestId, url,
         });
@@ -317,6 +416,93 @@ export function createPublicApiClient({ apiOrigin, requestOrigin = apiOrigin, fe
         requireToken(token);
         const body = validateInput(input);
         return request('/api/entries', { method: 'POST', token, body, signal, expectedStatus: 201, validate: isEntry });
+      } catch (error) { return Promise.reject(error); }
+    },
+    getFavorites({ token, signal, limit = 20, cursor, targetType } = {}) {
+      try {
+        requireToken(token);
+        const query = pagination(limit, cursor);
+        if (targetType !== undefined) {
+          if (!['book', 'entry'].includes(targetType)) throw apiError('收藏类型无效。', { code: 'INVALID_INPUT' });
+          query.set('targetType', targetType);
+        }
+        return request('/api/favorites?' + query, { token, signal, expectedStatus: 200,
+          validate: data => isList(data, limit, item => isFavorite(item) && (targetType === undefined || item.targetType === targetType)) });
+      } catch (error) { return Promise.reject(error); }
+    },
+    getBookNotes({ token, bookId, signal, limit = 20, cursor } = {}) {
+      try {
+        requireToken(token);
+        requireId(bookId, '作品 ID');
+        const query = pagination(limit, cursor);
+        return request('/api/books/' + encodeURIComponent(bookId) + '/notes?' + query, {
+          token, signal, expectedStatus: 200,
+          validate: data => isList(data, limit, item => isNote(item) && item.bookId === bookId, ['bookId', 'latestNoteId'])
+            && data.bookId === bookId && (data.total === 0 ? data.latestNoteId === null : isId(data.latestNoteId)),
+        });
+      } catch (error) { return Promise.reject(error); }
+    },
+    createNote({ token, bookId, body, signal } = {}) {
+      try {
+        requireToken(token);
+        requireId(bookId, '作品 ID');
+        if (!isText(body, 1000)) throw apiError('请填写 1 至 1000 个有效字符的感悟原文。', { code: 'INVALID_INPUT' });
+        return request('/api/books/' + encodeURIComponent(bookId) + '/notes', {
+          method: 'POST', token, body: { body }, signal, expectedStatus: 201,
+          validate: data => isNote(data) && data.bookId === bookId && data.body === body,
+        });
+      } catch (error) { return Promise.reject(error); }
+    },
+    deleteNote({ token, noteId, expectedRevision, signal } = {}) {
+      try {
+        requireToken(token);
+        requireId(noteId, '感悟 ID');
+        if (!positiveInteger(expectedRevision)) throw apiError('感悟版本无效，请重新读取。', { code: 'INVALID_INPUT' });
+        const query = new URLSearchParams({ expectedRevision: String(expectedRevision) });
+        return request('/api/notes/' + encodeURIComponent(noteId) + '?' + query, {
+          method: 'DELETE', token, signal, expectedStatus: 200,
+          validate: data => hasExactKeys(data, ['deleted', 'noteId']) && data.deleted === true && data.noteId === noteId,
+        });
+      } catch (error) { return Promise.reject(error); }
+    },
+    setNoteInSummary({ token, noteId, enabled, expectedRevision, signal } = {}) {
+      try {
+        requireToken(token);
+        requireId(noteId, '感悟 ID');
+        if (typeof enabled !== 'boolean' || !positiveInteger(expectedRevision)) {
+          throw apiError('加入总结库的选择或感悟版本无效，请重新读取。', { code: 'INVALID_INPUT' });
+        }
+        return request('/api/notes/' + encodeURIComponent(noteId) + '/summary', {
+          method: 'PATCH', token, body: { enabled, expectedRevision }, signal, expectedStatus: 200,
+          validate: data => isSummaryResult(data, noteId, enabled),
+        });
+      } catch (error) { return Promise.reject(error); }
+    },
+    setFavorite({ token, targetType, targetId, favorite, signal } = {}) {
+      try {
+        requireToken(token);
+        requireId(targetId, '收藏目标 ID');
+        if (!['book', 'entry'].includes(targetType) || typeof favorite !== 'boolean') {
+          throw apiError('收藏类型或收藏选择无效。', { code: 'INVALID_INPUT' });
+        }
+        return request('/api/favorites', { method: 'PATCH', token, body: { targetType, targetId, favorite },
+          signal, expectedStatus: 200, validate: data => hasExactKeys(data, ['targetType', 'targetId', 'favorite', 'favoritedAt'])
+            && data.targetType === targetType && data.targetId === targetId && data.favorite === favorite
+            && (favorite ? isTimestamp(data.favoritedAt) : data.favoritedAt === null) });
+      } catch (error) { return Promise.reject(error); }
+    },
+    saveAdoptedDemo({ token, entryId, input, signal } = {}) {
+      try {
+        requireToken(token);
+        requireId(entryId, '记录 ID');
+        const body = validateDemoInput(input);
+        return request('/api/entries/' + encodeURIComponent(entryId) + '/analysis', {
+          method: 'PATCH', token, body, signal, expectedStatus: 200,
+          validate: data => isEntry(data) && data.id === entryId && data.revision === body.expectedRevision + 1
+            && data.textVersion === body.sourceTextVersion && isDemoAnalysis(data.adoptedAnalysis)
+            && data.adoptedAnalysis.sourceTextVersion === body.sourceTextVersion && data.adoptedAnalysis.summary === body.summary
+            && JSON.stringify(data.adoptedAnalysis.questions) === JSON.stringify(body.questions),
+        });
       } catch (error) { return Promise.reject(error); }
     },
   };

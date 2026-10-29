@@ -8,6 +8,7 @@ import react from '@vitejs/plugin-react';
 let dom;
 let server;
 let HomePage;
+let AccountSessionProvider;
 let createRoot;
 let root;
 let rows;
@@ -175,7 +176,10 @@ before(async () => {
     define: { 'import.meta.env.VITE_API_ORIGIN': JSON.stringify('https://day20-api.test.invalid'),
       'import.meta.env.VITE_AUTH_ORIGIN': JSON.stringify(accountOrigin) },
   });
-  ({ default: HomePage } = await server.ssrLoadModule('/src/pages/HomePage.jsx'));
+  const { default: HomeWorkspace } = await server.ssrLoadModule('/src/pages/HomePage.jsx');
+  ({ AccountSessionProvider } = await server.ssrLoadModule('/src/components/AccountSession.jsx'));
+  // 每次挂载创建生产会话容器；旧虚构响应没有有效期，因此保持仅页内凭据。
+  HomePage = () => React.createElement(AccountSessionProvider, null, React.createElement(HomeWorkspace));
 });
 
 beforeEach(async () => {
@@ -751,7 +755,11 @@ test('Day27 普通账号登录读取任意真实身份对应的虚构记录，�
   const draftSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set;
   await act(async () => { draftSetter.call(draftBox, '【虚构私人草稿】退出后必须清除'); draftBox.dispatchEvent(new dom.window.Event('input', { bubbles: true })); });
   await click(button('退出登录'));
-  assert.ok(!draftBox.value.includes('【虚构私人草稿】'));
+  assert.equal(draftBox.isConnected, false, '退出后旧私人输入框已卸载');
+  const currentDraftBox = document.getElementById('cloud-test-text');
+  assert.ok(currentDraftBox, '退出后的当前页面有独立输入框');
+  assert.notEqual(currentDraftBox, draftBox, '当前输入框属于新的未登录工作区');
+  assert.ok(!currentDraftBox.value.includes('【虚构私人草稿】'), '当前页面没有退出前的私人草稿');
   assert.equal(Boolean(document.querySelector('.home-cloud-original')), false);
   assert.equal(Boolean(document.querySelector('.home-account-signed-in')), false);
   assertAccountSecretsAbsent();

@@ -39,9 +39,18 @@ CREATE TABLE IF NOT EXISTS public.entries (
             WHEN jsonb_typeof(adopted_analysis) = 'object'
                  AND jsonb_typeof(adopted_analysis -> 'questions') = 'array'
             THEN (
-                adopted_analysis ->> 'source' = 'ai'
-                AND jsonb_typeof(adopted_analysis -> 'generationRequestId') = 'string'
-                AND char_length(btrim(adopted_analysis ->> 'generationRequestId')) > 0
+                (
+                    (
+                        adopted_analysis ->> 'source' = 'ai'
+                        AND jsonb_typeof(adopted_analysis -> 'generationRequestId') = 'string'
+                        AND char_length(btrim(adopted_analysis ->> 'generationRequestId')) > 0
+                    )
+                    OR (
+                        adopted_analysis ->> 'source' = 'demo'
+                        AND adopted_analysis ->> 'demoId' = 'discussion-v1'
+                        AND NOT (adopted_analysis ? 'generationRequestId')
+                    )
+                )
                 AND jsonb_typeof(adopted_analysis -> 'sourceTextVersion') = 'number'
                 AND (adopted_analysis ->> 'sourceTextVersion') ~ '^[1-9][0-9]*(\.0+)?$'
                 AND jsonb_typeof(adopted_analysis -> 'summary') = 'string'

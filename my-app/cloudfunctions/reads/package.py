@@ -7,6 +7,7 @@ archive_path = function_dir.parent / "reads.zip"
 sources = [(function_dir / name, name) for name in
            ("index.js", "service.js", "auth.js", "db.js", "writer.js",
             "entriesRepository.js", "readingNotesRepository.js", "favoritesRepository.js",
+            "accountWriter.js", "accountWritesRepository.js",
             "package.json", "scf_bootstrap")]
 # 两个函数使用同一套精确 CORS；仅在部署包根目录复制。
 sources.append((function_dir.parent / "cors.cjs", "cors.cjs"))
@@ -23,4 +24,4 @@ with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr(entry, content.encode("utf-8"))
 
 print(f"已生成部署包：{archive_path}")
-print("顶层十二文件；启动文件为 LF 和 0755；不包含配置、日志、测试或密码。")
+print("顶层十四文件；启动文件为 LF 和 0755；不包含配置、日志、测试或密码。")

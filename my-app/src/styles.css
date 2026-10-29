@@ -674,3 +674,25 @@ dialog::backdrop { background: rgb(0 0 0 / 35%); }
   .home-account-modes { margin-bottom: 20px; }
   .home-account-actions button { flex: 1 1 auto; }
 }
+
+/* Day 30：站内页面共用账户入口，沿用现有宣纸、朱砂与楷体。 */
+.section-page > .account-access { max-width: 760px; margin: 0 0 24px; }
+.section-page > .account-access .home-account { margin: 0; padding: 16px 20px; border: 1px solid var(--home-line); border-radius: 2px; background: #f8efdc; }
+.section-page > .account-access .home-account button { font-family: inherit; border-radius: 2px; }
+.section-page > .account-access .home-account-field input { border-radius: 2px; }
+.account-restore { min-height: 44px; margin: 8px 0 16px; padding: 10px 16px; font: inherit; color: var(--home-green); border: 1px solid var(--home-line); border-radius: 2px; background: #f8efdc; cursor: pointer; }
+.account-restore:focus-visible { outline: 3px solid var(--home-green); outline-offset: 3px; }
+/* Day 30：非首页登录后，账户落在页尾，并使用各页现有宣纸。 */
+.account-footer { width: 100%; max-width: 760px; margin: 20px auto 0; text-align: left; font-size: 1rem; letter-spacing: normal; }
+.account-footer .home-account { margin: 0; padding: 16px 20px; border: 1px solid var(--home-line); border-radius: 3px; color: var(--home-ink); }
+.journal-shell .account-footer .home-account { background: #f6eedc var(--journal-paper) center / 640px; }
+.books-shell .account-footer .home-account { background: #f4e8d1 var(--books-paper) center / 640px; }
+.account-footer .home-account button { font: inherit; color: var(--home-ink); border-color: var(--home-line); border-radius: 2px; background: transparent; }
+.account-footer .home-account button:hover:not(:disabled) { border-color: var(--home-green); background: #eadcc2; }
+.account-footer .home-account-status { color: var(--home-muted); font-size: 0.9375rem; }
+@media (max-width: 600px) {
+  .account-footer { margin-top: 16px; }
+  .account-footer .home-account { padding: 14px 16px; }
+  .account-footer .home-account-session { gap: 12px; }
+  .account-footer .home-account-logout { flex-shrink: 0; }
+}

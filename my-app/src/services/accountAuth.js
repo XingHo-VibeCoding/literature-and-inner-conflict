@@ -78,8 +78,9 @@ function isRegistrationSuccess(value) {
     && Object.keys(value.data).join(',') === 'registered' && value.data.registered === true;
 }
 
-// 仅使用页内短期凭证；不读取存储、不保留刷新令牌，也不返回用户身份资料。
-export function createAccountAuthClient({ authOrigin, registrationOrigin, registrationRequestOrigin = registrationOrigin, fetchImpl = globalThis.fetch } = {}) {
+// 只返回访问凭证；有效期按官方 expires_in 计算，不保留刷新令牌或用户资料。
+export function createAccountAuthClient({ authOrigin, registrationOrigin, registrationRequestOrigin = registrationOrigin,
+  fetchImpl = globalThis.fetch, includeSessionExpiry = false, now = Date.now } = {}) {
   const origin = parseAuthOrigin(authOrigin);
   if (typeof fetchImpl !== 'function') throw new AccountAuthError('当前环境无法发送登录请求。', { code: 'INVALID_CONFIGURATION' });
   const client = {
@@ -89,6 +90,7 @@ export function createAccountAuthClient({ authOrigin, registrationOrigin, regist
       let session = null;
       let profile = null;
       let token = null;
+      let expiresAt = null;
       let timedOut = false;
       const error = (message, code) => new AccountAuthError(message, { code, loginStatus, profileStatus });
       if (typeof username !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:+ @-]{1,47}$/.test(username)
@@ -119,6 +121,7 @@ export function createAccountAuthClient({ authOrigin, registrationOrigin, regist
         return result;
       };
       try {
+        const requestedAt = now();
         const request = fetchImpl(origin + '/auth/v1/signin', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ username, password }),
@@ -152,6 +155,10 @@ export function createAccountAuthClient({ authOrigin, registrationOrigin, regist
           throw error('登录响应未提供有效会话，请重新登录。', 'INVALID_SESSION');
         }
         token = session.access_token;
+        if (Number.isSafeInteger(session.expires_in) && session.expires_in > 0
+          && Number.isSafeInteger(requestedAt + session.expires_in * 1000)) {
+          expiresAt = requestedAt + session.expires_in * 1000;
+        }
         session = null;
         const profileResponse = await wait(fetchImpl(origin + '/auth/v1/user/me', {
           method: 'GET', headers: { Accept: 'application/json', Authorization: 'Bearer ' + token },
@@ -165,7 +172,10 @@ export function createAccountAuthClient({ authOrigin, registrationOrigin, regist
           throw error('身份核验服务返回异常，请重新登录。', 'INVALID_RESPONSE');
         }
         if (!isOrdinaryProfile(profile)) throw error('当前会话不是有效的普通用户账号，请使用已激活的普通账号登录。', 'INVALID_PROFILE');
-        return { token, loginStatus, profileStatus };
+        if (includeSessionExpiry && expiresAt !== null && expiresAt <= now()) {
+          throw error('登录凭证已过期，请重新登录。', 'SESSION_EXPIRED');
+        }
+        return { token, loginStatus, profileStatus, ...(includeSessionExpiry ? { expiresAt } : {}) };
       } catch (caught) {
         checkCancellation();
         if (caught instanceof AccountAuthError) throw caught;
@@ -175,6 +185,64 @@ export function createAccountAuthClient({ authOrigin, registrationOrigin, regist
         clearTimeout(timer);
         signal?.removeEventListener('abort', cancel);
         username = password = token = session = profile = null;
+      }
+    },
+    async verifySession({ token, signal } = {}) {
+      let profileStatus = null;
+      let profile = null;
+      let timedOut = false;
+      const error = (message, code) => new AccountAuthError(message, { code, profileStatus });
+      if (typeof token !== 'string' || !token || token.length > 8192 || /[\s\u0000-\u001f\u007f]/.test(token)) {
+        throw error('保存的登录凭证无效，请重新登录。', 'INVALID_SESSION');
+      }
+      if (signal?.aborted) throw error('已取消本次登录状态核验。', 'ABORTED');
+      const controller = new AbortController();
+      let rejectCancellation;
+      const cancellation = new Promise((resolve, reject) => { rejectCancellation = reject; });
+      const cancel = () => {
+        controller.abort();
+        rejectCancellation(error('已取消本次登录状态核验。', 'ABORTED'));
+      };
+      signal?.addEventListener('abort', cancel, { once: true });
+      const timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        rejectCancellation(error('登录状态核验超过 30 秒，请检查网络后重试。', 'TIMEOUT'));
+      }, TIMEOUT_MS);
+      const checkCancellation = () => {
+        if (signal?.aborted) throw error('已取消本次登录状态核验。', 'ABORTED');
+        if (timedOut) throw error('登录状态核验超过 30 秒，请检查网络后重试。', 'TIMEOUT');
+      };
+      const wait = async promise => {
+        const result = await Promise.race([promise, cancellation]);
+        checkCancellation();
+        return result;
+      };
+      try {
+        const response = await wait(fetchImpl(origin + '/auth/v1/user/me', {
+          method: 'GET', headers: { Accept: 'application/json', Authorization: 'Bearer ' + token },
+          credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal,
+        }));
+        profileStatus = response.status;
+        if ([400, 401, 403].includes(profileStatus)) {
+          throw error('登录凭证无效或已过期，请重新登录。', 'UNAUTHENTICATED');
+        }
+        if (profileStatus !== 200) throw error('暂时无法核验登录状态，请稍后重试。', 'PROFILE_UNAVAILABLE');
+        try { profile = await wait(response.json()); } catch (caught) {
+          checkCancellation();
+          if (caught instanceof AccountAuthError) throw caught;
+          throw error('身份核验服务返回异常，请稍后重试。', 'INVALID_RESPONSE');
+        }
+        if (!isOrdinaryProfile(profile)) throw error('当前会话不是有效的普通用户账号，请重新登录。', 'INVALID_PROFILE');
+        return { token, profileStatus };
+      } catch (caught) {
+        checkCancellation();
+        if (caught instanceof AccountAuthError) throw caught;
+        throw error('登录状态核验的网络请求失败，请检查网络后重试。', 'NETWORK_ERROR');
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', cancel);
+        token = profile = null;
       }
     },
     async signUp({ username, password, signal } = {}) {

@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { countCharacters, validateAnalysis } from '../../shared/validation.js';
 import { createDemoDraft, isDemoEntry } from '../services/analysisModel.js';
 import { requireCurrentEntry } from '../services/entryModel.js';
-import { readEntry, saveAdoptedDemo } from '../services/localStore.js';
+import { useAccountSession } from '../components/AccountSession.jsx';
 
 export default function AnalysisPanel({ entry, disabled, onStateChange, onAdopted }) {
+  const { data, signedIn } = useAccountSession();
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -15,15 +16,20 @@ export default function AnalysisPanel({ entry, disabled, onStateChange, onAdopte
   const dialog = useRef(null);
   const request = useRef(0);
   const lock = useRef(false);
+  const mounted = useRef(false);
   const eligible = isDemoEntry(entry);
 
   useEffect(() => {
     onStateChange({ dirty: Boolean(draft), saving });
   }, [draft, saving, onStateChange]);
 
-  useEffect(() => () => {
-    request.current += 1;
-    onStateChange({ dirty: false, saving: false });
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      request.current += 1;
+      onStateChange({ dirty: false, saving: false });
+    };
   }, [onStateChange]);
 
   useEffect(() => {
@@ -32,7 +38,7 @@ export default function AnalysisPanel({ entry, disabled, onStateChange, onAdopte
   }, [confirmation]);
 
   async function loadDemo() {
-    if (disabled || lock.current || !eligible) return;
+    if (!mounted.current || !signedIn || !data || disabled || lock.current || !eligible) return;
     lock.current = true;
     const token = ++request.current;
     setLoading(true);
@@ -41,7 +47,7 @@ export default function AnalysisPanel({ entry, disabled, onStateChange, onAdopte
     setFailure('');
     setNotice('');
     try {
-      const latest = await readEntry(entry.id);
+      const latest = await data.readEntry(entry.id);
       if (request.current !== token) return;
       requireCurrentEntry(latest, entry.revision);
       setDraft(createDemoDraft(latest));
@@ -56,23 +62,28 @@ export default function AnalysisPanel({ entry, disabled, onStateChange, onAdopte
 
   async function adopt(event) {
     event.preventDefault();
-    if (disabled || lock.current || !draft) return;
+    if (!mounted.current || !signedIn || !data || disabled || lock.current || !draft) return;
     const nextErrors = validateAnalysis(draft);
     setErrors(nextErrors);
     setNotice('');
     if (Object.keys(nextErrors).length) return;
     lock.current = true;
+    const token = ++request.current;
     setSaving(true);
     setFailure('');
     try {
-      const saved = await saveAdoptedDemo(draft);
+      const saved = await data.saveAdoptedDemo(draft);
+      if (request.current !== token) return;
       onAdopted(saved);
       setDraft(null);
-      setNotice('演示分析已采纳并保存在当前浏览器；原文与记录日期保持不变。');
+      setNotice('演示分析已采纳并保存到账户云端；原文与记录日期保持不变。');
     } catch (error) {
-      setFailure(error.code === 'LOCAL_VERSION_CONFLICT' ? error.message
-        : '采纳保存未成功。草稿和此前成功保存的分析均已保留，请稍后重试。');
-    } finally { lock.current = false; setSaving(false); }
+      if (request.current !== token) return;
+      setFailure(['LOCAL_VERSION_CONFLICT', 'VERSION_CONFLICT'].includes(error.code) ? error.message
+        : '采纳保存结果未确认。草稿和此前读取的分析均已保留，请重新读取记录核对后再决定是否重试。');
+    } finally {
+      if (request.current === token) { lock.current = false; setSaving(false); }
+    }
   }
 
   function edit(patch) {
@@ -95,18 +106,18 @@ export default function AnalysisPanel({ entry, disabled, onStateChange, onAdopte
 
   return (
     <section className="analysis-panel" aria-labelledby="analysis-title">
-      <h3 id="analysis-title">日精进分析 · 本地演示</h3>
-      <p className="storage-notice">真实 AI 尚未接入。这里使用固定的虚构示例和预先编写的测试结果，演示编辑与采纳流程，不会发送原文、历史记录、收藏或备注。</p>
+      <h3 id="analysis-title">日精进分析 · 固定演示</h3>
+      <p className="storage-notice">真实 AI 尚未接入。这里使用固定的虚构示例和预先编写的测试结果，演示编辑与采纳流程，不会将原文、历史记录、收藏或备注发送给 AI。采纳后保留演示标记，保存到账户云端。</p>
       <div className="record-actions">
         <button type="button" disabled>分析本次总结（AI 暂未接入）</button>
-        <button type="button" disabled={disabled || !eligible || loading || saving}
+        <button type="button" disabled={!signedIn || !data || disabled || !eligible || loading || saving}
           onClick={() => draft ? setConfirmation('reload') : void loadDemo()}>
           {loading ? '正在读取演示…' : draft ? '重新载入演示草稿' : '载入固定演示草稿'}
         </button>
       </div>
-      {!eligible && <p className="scope-note">此记录不是固定虚构示例。可点击“新建日精进”，再选择“填写虚构示例”并保存，体验本地演示。</p>}
+      {!eligible && <p className="scope-note">此记录不是固定虚构示例。可点击“新建日精进”，再选择“填写虚构示例”并保存，体验固定演示。</p>}
       {draft && <form onSubmit={adopt} noValidate>
-        <fieldset disabled={disabled || saving}>
+        <fieldset disabled={!signedIn || !data || disabled || saving}>
           <legend>演示草稿（固定测试结果，非真实 AI 生成）</legend>
           <p>请对照记录原文核对，可编辑后再采纳。修改演示文字也不会改变它的来源标记。</p>
           <label htmlFor="analysis-summary">演示总结</label>

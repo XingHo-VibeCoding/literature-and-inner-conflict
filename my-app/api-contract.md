@@ -1121,3 +1121,33 @@ PATCH读回关联ID为c63aa9ea-973f-40e4-9a87-ca7a082476d3；DELETE后GET关联I
 本轮代码验证沿用已通过的43项相关测试及构建；其后仅更新本契约及本地忽略日志，没有重写代码。既有POST/PATCH/DELETE与正式SELECT闭环、此次本地新版真实取消和正式SELECT不变的证据分别见前文；真实Esc、正式不存在ID中文404、跨用户及并发的本轮未验证边界保持原记录。
 
 本次Git交付范围仅3个Day22文件：src/pages/HomePage.jsx、src/pages/homeCloudFlow.test.js、api-contract.md；前批后端及接口工作已在389edc7提交，本次不重新暂存。按用户已确认方案在公网验收通过后提交并正常推送main，最终Git回执保存在本地忽略日志，不提交密钥、.env、dist或日志，不开始Day23其他板块。
+
+## Day 30｜账户数据保存增补（2026-10-26，Asia/Shanghai）
+
+本节记录第三板块新增代码的约定；历史验收记录保留。代码已补齐不表示云函数已部署、迁移已执行或真实账户已验收。本轮不自动导入本机记录，不接入真实 AI。
+
+所有以下接口继续使用 `{ok,data,error}` 封套、经 CloudBase 核验的 Bearer 用户凭证、服务端 `owner_id` 以及原有精确来源 CORS。客户端不能传入归属、来源、ID、服务端时间或未登记字段；新增和修改不接收 query。GET 的分页、排序与字段保持既有约定。
+
+| 方法与路径 | 请求 | 成功 data |
+| --- | --- | --- |
+| `POST /api/books/:bookId/notes` | `{body}`，原文有效字符 1–1000 | HTTP 201，完整 Note 对象 |
+| `DELETE /api/notes/:noteId?expectedRevision=n` | 无 body，只能有一个有效版本 query | HTTP 200，`{deleted:true,noteId}` |
+| `PATCH /api/notes/:noteId/summary` | `{enabled,expectedRevision}` | HTTP 200，`{note,entry,outcome}` |
+| `PATCH /api/favorites` | `{targetType,targetId,favorite}`，类型为 `book` 或 `entry` | HTTP 200，`{targetType,targetId,favorite,favoritedAt}` |
+| `PATCH /api/entries/:entryId/analysis` | `{expectedRevision,sourceTextVersion,summary,questions}` | HTTP 200，完整 Entry 对象 |
+
+Note 字段为 `id,bookId,body,revision,createdAt,updatedAt,savedAt,saveOrder,summaryLink`；时间戳统一输出 UTC ISO 字符串。每次感悟保存追加新历史，原始空格与换行保留。只有本人该作品最新感悟可删除；删除只移除这条感悟，已加入总结的独立日精进副本及其来源快照保留。删除成功返回本节最小确认形状；不再沿用旧占位中的 `bookId/latestNoteId`，客户端成功后重新 GET 列表。
+
+`summaryLink` 沿用 `{entryId,active,linkedAt,entryRevisionAtLink,preserveOnCancel}` 或 null。加入总结时复制感悟原文，日精进日期固定取原 `savedAt` 的上海日历日；`origin` 保存 `type:'reading-note'`、感悟 ID、作品 ID、作品标题与原保存时间。来源只能由服务端使用发布书库建立。关联操作不覆盖感悟原文、保存时间、历史顺序或副本被用户修改的日期与文字。
+
+`outcome` 与原本地流程一致：`added` 创建副本，`reused` 恢复已有副本关联，`unchanged` 为已处于目标状态的重复操作，`removed` 取消并移除从未修改的副本，`preserved-edited` 取消关联但保留已修改过的副本。安全的同状态操作不新增版本；其他操作须匹配当前感悟 `revision`。关联来源不符返回 409 `NOTE_LINK_CONFLICT`。移除未修改副本时，感悟关联先完整清空，副本及其收藏在同一句 SQL 内移除；修改过的副本不会被取消关联删除。
+
+作品及作品收藏目标来自服务端发布书库；日精进收藏目标必须属于当前认证用户。重复设置为收藏保留首次 `favoritedAt`；取消时才返回 null。不存在或不属于本人目标统一返回 404，不泄露其他账户记录。
+
+分析采纳目前只支持固定虚构原文的演示草稿。服务端核对当前记录版本、原文版本和固定原文；总结有效字符 1–300，问题 1–2 个、每个 1–100。采纳对象固定为 `{source:'demo',demoId:'discussion-v1',sourceTextVersion,summary,questions,adoptedAt}`，不会把演示标记成 AI。客户端不得传入 `source/demoId/generationRequestId`。普通原文、旧原文版本或错误上下文返回 409 `ANALYSIS_CONTEXT_MISMATCH`；原文和记录日期不因采纳而改变。后续修改原文继续清除旧分析。
+
+新增感悟、删除、关联、收藏及演示采纳各自只发一条固定 SQL，以参数传入动态内容。关联涉及多表的变更用数据修改 CTE 完成，不通过多次网关调用伪造事务。感悟并发追加触发既有 `(owner_id,book_id,save_order)` 唯一约束时，返回 409 `VERSION_CONFLICT`，由用户重新读取后决定是否重试；不自动重复保存。版本、原文防重与行锁冲突保留明确错误；数据库原始消息和用户正文不进入日志。
+
+部署前须由用户核对并执行 [day30-account-data.sql](./db/day30-account-data.sql)，只扩展 `entries_analysis_check`，按 AI／demo 分支保留各自来源标识，验证失败整段回滚。保留此前 Day 22 唯一索引迁移要求。新建库脚本 [schema.sql](./db/schema.sql) 已同步该约束。`reads/package.py` 的源码清单已包含账户写入模块；本轮未执行打包上传。
+
+验证边界：`cloudfunctions/reads/day30-account.test.js` 只使用虚构用户、原文及模拟数据库，覆盖请求校验、可信归属、响应字段、错误映射、固定 SQL 白名单与打包源码清单。它不证明真实 PostgreSQL 并发、CTE 外键时序、CloudBase 配置或部署成功；这些仍须单独核验。

@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const { createAccountWriter } = require('./accountWriter');
 const { ApiError, entry } = require('./service');
 const { INSERT_ENTRY_SQL, PATCH_ENTRY_SQL, DELETE_ENTRY_SQL, createEntriesRepository } = require('./entriesRepository');
 
@@ -81,9 +82,13 @@ function validateFields(body, timeZone, now, partial) {
   if (Object.keys(fields).length) throw invalid('请检查必填字段和输入内容。', fields);
 }
 
-function createWriter({ query, now = () => new Date() }) {
+function createWriter({ query, now = () => new Date(), books = new Map() }) {
   const entriesRepository = createEntriesRepository({ query });
-  return async function write({ ownerId, body, timeZone, operation = 'POST', entryId, expectedRevision }) {
+  const writeAccount = createAccountWriter({ query, now, books });
+  return async function write({ ownerId, body, timeZone, operation = 'POST', entryId, expectedRevision, kind, bookId, noteId }) {
+    if (['notes', 'note', 'noteSummary', 'favorites', 'entryAnalysis'].includes(kind)) {
+      return writeAccount({ ownerId, body, operation, entryId, expectedRevision, kind, bookId, noteId });
+    }
     if (!['POST', 'PATCH', 'DELETE'].includes(operation)) throw invalid('写入操作无效。');
     if (operation !== 'DELETE') validateFields(body, timeZone, now, operation === 'PATCH');
     if (typeof ownerId !== 'string' || !ownerId.trim()) {

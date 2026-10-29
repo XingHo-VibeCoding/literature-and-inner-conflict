@@ -234,12 +234,12 @@ test('HTTP无令牌返回统一401，伪造用户头无法越过认证', async (
   });
 });
 
-test('HTTP拒绝未知路径和写入方法，Allow头标明GET', async () => {
+test('HTTP拒绝未知路径和未登记写入方法，收藏Allow头标明GET与PATCH', async () => {
   await localServer(async (base, db) => {
     assert.equal((await fetch(`${base}/api/health`)).status, 404);
     const post = await fetch(`${base}/api/favorites`, { method: 'POST', headers: authorized });
     assert.equal(post.status, 405);
-    assert.equal(post.headers.get('allow'), 'GET');
+    assert.equal(post.headers.get('allow'), 'GET, PATCH');
     assert.equal(db.calls.length, 0);
   });
 });

@@ -3,6 +3,7 @@ import JournalPage from './pages/JournalPage.jsx';
 import BooksPage from './pages/BooksPage.jsx';
 import HomePage from './pages/HomePage.jsx';
 import usePageMotion from './components/usePageMotion.js';
+import { AccountAccess, AccountSessionProvider, useAccountSession } from './components/AccountSession.jsx';
 import { getBook, getRecommendationContext } from './services/catalog.js';
 
 const sections = {
@@ -23,6 +24,12 @@ function readPath() {
 }
 
 export default function App() {
+  return <AccountSessionProvider><AppShell /></AccountSessionProvider>;
+}
+
+function AppShell() {
+  const { signedIn, snapshot } = useAccountSession();
+  const accountKey = signedIn ? 'account-' + snapshot.version : 'guest';
   const [path, setPath] = useState(readPath);
   const { transitionTo, targetPath } = usePageMotion(path);
   const handledLocation = useRef(null);
@@ -87,6 +94,14 @@ export default function App() {
     else leaveDialog.current.close();
   }, [pendingPath]);
 
+  useEffect(() => {
+    // 账户变化后旧私人组件会重建，草稿与离开确认也不能沿用旧账户。
+    setJournalDraft({ dirty: false, saving: false });
+    setBookDraft({ dirty: false, saving: false });
+    setPendingPath(null);
+    setNavigationMessage('');
+  }, [accountKey]);
+
   function navigate(nextPath, context = null) {
     // 历史条目只存随机标识；推荐上下文留在本页内存，刷新后不恢复。
     const visitId = context ? crypto.getRandomValues(new Uint32Array(4)).join('-') : null;
@@ -139,7 +154,7 @@ export default function App() {
             {(isHome || path === '/journal' || isBooks) && <span className="home-brand-mark" aria-hidden="true">文</span>}
             文学与内心冲突
           </a>
-          <span className="stage-label">{isHome ? '记录 · 阅读 · 回看' : '本地记录版'}</span>
+          <span className="stage-label">{isHome ? '记录 · 阅读 · 回看' : signedIn ? '账户记录版' : '登录后保存'}</span>
         </div>
         <nav className="site-nav" aria-label="主要页面">
           <a href="#/" aria-current={isHome ? 'page' : undefined}>首页</a>
@@ -154,13 +169,14 @@ export default function App() {
           <HomePage />
         ) : (
           <section className="section-page" aria-labelledby={isBooks && path !== '/books' ? 'book-title' : 'section-title'}>
+            {!signedIn && <AccountAccess disabled={activeDraft.saving} />}
             {(!isBooks || path === '/books') && <>
               <a className="back-link" href="#/">← 返回首页</a>
               <h1 id="section-title">{section?.title || '页面未找到'}</h1>
             </>}
             {path === '/journal' && <p className="journal-intro">{section.description}</p>}
-            {path === '/journal' ? <JournalPage onDraftChange={setJournalDraft} /> : isBooks ? (
-              <BooksPage path={path} browse={bookBrowse} onBrowseChange={setBookBrowse}
+            {path === '/journal' ? <JournalPage key={accountKey} onDraftChange={setJournalDraft} /> : isBooks ? (
+              <BooksPage key={accountKey} path={path} browse={bookBrowse} onBrowseChange={setBookBrowse}
                 listPosition={bookListPosition} detailContext={bookDetailContext} onDraftChange={setBookDraft} />
             ) : (
               <p>这个地址还没有对应页面，请返回首页选择入口。</p>
@@ -178,7 +194,12 @@ export default function App() {
         </div>
       </dialog>
 
-      <footer className="site-footer">从自己的记录出发，让阅读与生活相互参照。</footer>
+      <footer className="site-footer">
+        从自己的记录出发，让阅读与生活相互参照。
+        {!isHome && signedIn && <div className="account-footer">
+          <AccountAccess disabled={activeDraft.saving} />
+        </div>}
+      </footer>
     </div>
   );
 }

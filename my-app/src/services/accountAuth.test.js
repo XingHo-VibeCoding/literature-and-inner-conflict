@@ -465,3 +465,95 @@ test('注册与自动登录不接触持久存储、不打印凭证或保存刷�
     }
   }
 });
+
+test('选择会话有效期时按请求开始时间及官方expires_in计算，仍不返回资料或刷新令牌', async () => {
+  let clock = 1800000000000;
+  let count = 0;
+  const client = createAccountAuthClient({ authOrigin: ORIGIN, includeSessionExpiry: true,
+    now: () => clock, fetchImpl: async () => {
+      count += 1;
+      clock += 500;
+      return count === 1 ? makeResponse({ access_token: TOKEN, expires_in: 7200, refresh_token: REFRESH_TOKEN })
+        : makeResponse({ sub: USER_ID, status: 'ACTIVE' });
+    } });
+  assert.deepEqual(await client.signIn(INPUT), {
+    token: TOKEN, loginStatus: 200, profileStatus: 200, expiresAt: 1800007200000,
+  });
+});
+
+test('缺失或非法expires_in不猜默认有效期，只允许调用方维持页内会话', async () => {
+  for (const expires_in of [undefined, null, 0, -1, '7200', 1.5, Number.MAX_SAFE_INTEGER]) {
+    let count = 0;
+    const client = createAccountAuthClient({ authOrigin: ORIGIN, includeSessionExpiry: true,
+      fetchImpl: async () => ++count === 1 ? makeResponse({ access_token: TOKEN, expires_in })
+        : makeResponse({ sub: USER_ID, status: 'ACTIVE' }) });
+    assert.equal((await client.signIn(INPUT)).expiresAt, null);
+  }
+});
+
+test('身份核验完成前凭据已过期时不返回登录成功', async () => {
+  let clock = 1800000000000;
+  let count = 0;
+  const client = createAccountAuthClient({ authOrigin: ORIGIN, includeSessionExpiry: true,
+    now: () => clock, fetchImpl: async () => {
+      if (++count === 1) return makeResponse({ access_token: TOKEN, expires_in: 1 });
+      clock += 1000;
+      return makeResponse({ sub: USER_ID, status: 'ACTIVE' });
+    } });
+  await assert.rejects(client.signIn(INPUT), error => error.code === 'SESSION_EXPIRED' && safeError(error));
+});
+
+test('恢复会话只请求云端用户核验，已激活普通用户成功且不暴露资料', async () => {
+  const calls = [];
+  const client = createAccountAuthClient({ authOrigin: ORIGIN, fetchImpl: async (url, init) => {
+    calls.push({ url, init });
+    return makeResponse({ sub: USER_ID, status: 'ACTIVE', internal_user_type: 'generalUser' });
+  } });
+  assert.deepEqual(await client.verifySession({ token: TOKEN }), { token: TOKEN, profileStatus: 200 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, ORIGIN + '/auth/v1/user/me');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer ' + TOKEN);
+  assert.equal(calls[0].init.credentials, 'omit');
+  assert.equal(calls[0].init.cache, 'no-store');
+  assert.equal(calls[0].init.redirect, 'error');
+});
+
+test('恢复必须远端200及普通身份，过期权限错误与服务故障分开处理', async () => {
+  for (const [status, profile, code] of [
+    [401, {}, 'UNAUTHENTICATED'], [400, {}, 'UNAUTHENTICATED'], [403, {}, 'UNAUTHENTICATED'],
+    [503, {}, 'PROFILE_UNAVAILABLE'], [201, {}, 'PROFILE_UNAVAILABLE'],
+    [200, { sub: USER_ID, status: 'ACTIVE', is_anonymous: true }, 'INVALID_PROFILE'],
+    [200, { sub: USER_ID, status: 'ACTIVE', roles: ['admin'] }, 'INVALID_PROFILE'],
+    [200, { sub: USER_ID, status: 'DISABLED' }, 'INVALID_PROFILE'],
+  ]) {
+    const client = createAccountAuthClient({ authOrigin: ORIGIN, fetchImpl: async () => makeResponse(profile, status) });
+    await assert.rejects(client.verifySession({ token: TOKEN }), error => error.code === code
+      && error.profileStatus === status && safeError(error));
+  }
+});
+
+test('恢复的非法凭据、异常正文、网络错误及取消不会泄露凭据', async () => {
+  let count = 0;
+  const client = createAccountAuthClient({ authOrigin: ORIGIN,
+    fetchImpl: async () => { count += 1; throw new Error(TOKEN + USER_ID); } });
+  for (const token of ['', 'bad token', 'x'.repeat(8193)]) {
+    await assert.rejects(client.verifySession({ token }), error => error.code === 'INVALID_SESSION' && safeError(error));
+  }
+  assert.equal(count, 0);
+  await assert.rejects(client.verifySession({ token: TOKEN }), error => error.code === 'NETWORK_ERROR' && safeError(error));
+  const malformed = createAccountAuthClient({ authOrigin: ORIGIN, fetchImpl: async () => new Response(TOKEN + USER_ID) });
+  await assert.rejects(malformed.verifySession({ token: TOKEN }), error => error.code === 'INVALID_RESPONSE' && safeError(error));
+  const controller = new AbortController();
+  const delayed = createAccountAuthClient({ authOrigin: ORIGIN, fetchImpl: () => new Promise(() => {}) });
+  const pending = delayed.verifySession({ token: TOKEN, signal: controller.signal });
+  controller.abort();
+  await assert.rejects(pending, error => error.code === 'ABORTED' && safeError(error));
+});
+
+test('恢复请求与正文共享30秒超时，不响应AbortSignal的模拟也能结束', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const client = createAccountAuthClient({ authOrigin: ORIGIN, fetchImpl: () => new Promise(() => {}) });
+  const pending = client.verifySession({ token: TOKEN });
+  t.mock.timers.tick(30000);
+  await assert.rejects(pending, error => error.code === 'TIMEOUT' && safeError(error));
+});

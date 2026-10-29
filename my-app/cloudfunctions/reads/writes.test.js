@@ -408,7 +408,7 @@ test('HTTP未登记query及PATCH、DELETE、其他资源POST拒绝，不执行�
     }
     const favorites = await post(base, validBody(), '/api/favorites');
     assert.equal(favorites.response.status, 405);
-    assert.equal(favorites.response.headers.get('allow'), 'GET');
+    assert.equal(favorites.response.headers.get('allow'), 'GET, PATCH');
     assert.equal(db.calls.length, 0);
   });
 });

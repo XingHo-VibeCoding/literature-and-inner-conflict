@@ -343,3 +343,143 @@ test('PATCH/DELETE 的不存在及版本冲突统一中文错误，不自动重�
     assert.equal(calls.length, 2);
   }
 });
+
+const NOTE = { id: 'fictional-cloud-note', bookId: 'walden', body: '  【虚构】阅读后的原文。\n第二行。  ',
+  revision: 1, createdAt: ENTRY.createdAt, updatedAt: ENTRY.updatedAt, savedAt: ENTRY.createdAt,
+  saveOrder: 1, summaryLink: null };
+const FAVORITE = { targetType: 'book', targetId: NOTE.bookId, favoritedAt: ENTRY.createdAt };
+
+test('账户收藏与感悟严格读取分页、作品和原文，支持收藏类型筛选', async () => {
+  const favorites = setup(success(list([FAVORITE])));
+  assert.deepEqual((await favorites.client.getFavorites({ token: TOKEN, targetType: 'book' })).data.items, [FAVORITE]);
+  assert.equal(favorites.calls[0].url, ORIGIN + '/api/favorites?limit=20&targetType=book');
+  const notes = setup(success({ ...list([NOTE]), bookId: NOTE.bookId, latestNoteId: NOTE.id }));
+  assert.deepEqual((await notes.client.getBookNotes({ token: TOKEN, bookId: NOTE.bookId })).data.items, [NOTE]);
+  assert.equal(notes.calls[0].url, ORIGIN + '/api/books/walden/notes?limit=20');
+  assert.equal(notes.calls[0].init.headers.Authorization, 'Bearer ' + TOKEN);
+  assert.equal(notes.calls[0].init.credentials, 'omit');
+});
+
+test('收藏与感悟响应拒绝未知资料字段、错作品、无效时间和缺失关联状态', async () => {
+  for (const item of [{ ...FAVORITE, ownerId: 'fictional-private-user' }, { ...FAVORITE, targetType: 'admin' },
+    { ...FAVORITE, favoritedAt: null }]) {
+    await assert.rejects(setup(success(list([item]))).client.getFavorites({ token: TOKEN }), error => error.code === 'INVALID_RESPONSE');
+  }
+  for (const note of [{ ...NOTE, ownerId: 'fictional-private-user' }, { ...NOTE, bookId: 'other-book' },
+    { ...NOTE, body: ' ' }, { ...NOTE, revision: 0 }, { ...NOTE, saveOrder: 0 },
+    { ...NOTE, summaryLink: {} }, { ...NOTE, savedAt: 'invalid' }]) {
+    await assert.rejects(setup(success({ ...list([note]), bookId: NOTE.bookId, latestNoteId: NOTE.id }))
+      .client.getBookNotes({ token: TOKEN, bookId: NOTE.bookId }), error => error.code === 'INVALID_RESPONSE');
+  }
+  await assert.rejects(setup(success({ ...list([]), bookId: NOTE.bookId, latestNoteId: NOTE.id }))
+    .client.getBookNotes({ token: TOKEN, bookId: NOTE.bookId }), error => error.code === 'INVALID_RESPONSE');
+});
+
+test('追加感悟只发送原文且必须201读回完全相同文本，删除仅发送预期版本', async () => {
+  const created = setup(success(NOTE), 201);
+  assert.deepEqual((await created.client.createNote({ token: TOKEN, bookId: NOTE.bookId, body: NOTE.body })).data, NOTE);
+  assert.deepEqual(JSON.parse(created.calls[0].init.body), { body: NOTE.body });
+  assert.equal(created.calls[0].init.method, 'POST');
+  assert.equal(created.calls[0].init.headers['X-Client-Time-Zone'], 'Asia/Shanghai');
+  assert.equal(created.calls[0].url, ORIGIN + '/api/books/walden/notes');
+  await assert.rejects(setup(success({ ...NOTE, body: NOTE.body.trim() }), 201).client.createNote({
+    token: TOKEN, bookId: NOTE.bookId, body: NOTE.body }), error => error.code === 'INVALID_RESPONSE');
+  await assert.rejects(setup(success(NOTE), 200).client.createNote({ token: TOKEN, bookId: NOTE.bookId,
+    body: NOTE.body }), error => error.code === 'INVALID_RESPONSE');
+  const deleted = setup(success({ deleted: true, noteId: NOTE.id }));
+  await deleted.client.deleteNote({ token: TOKEN, noteId: NOTE.id, expectedRevision: 1 });
+  assert.equal(deleted.calls[0].url, ORIGIN + '/api/notes/' + NOTE.id + '?expectedRevision=1');
+  assert.equal(deleted.calls[0].init.method, 'DELETE');
+  assert.equal(Object.hasOwn(deleted.calls[0].init, 'body'), false);
+});
+
+test('收藏设置使用明确boolean且核对类型、目标及取消后的空时间', async () => {
+  for (const favorite of [true, false]) {
+    const body = { ...FAVORITE, favorite, favoritedAt: favorite ? FAVORITE.favoritedAt : null };
+    const { client, calls } = setup(success(body));
+    assert.deepEqual((await client.setFavorite({ token: TOKEN, targetType: 'book', targetId: NOTE.bookId, favorite })).data, body);
+    assert.deepEqual(JSON.parse(calls[0].init.body), { targetType: 'book', targetId: NOTE.bookId, favorite });
+    assert.equal(calls[0].init.method, 'PATCH');
+    assert.equal(calls[0].url, ORIGIN + '/api/favorites');
+  }
+  for (const body of [{ ...FAVORITE, favorite: false }, { ...FAVORITE, favorite: true, targetId: 'other' },
+    { ...FAVORITE, favorite: true, userId: 'fictional-private' }]) {
+    await assert.rejects(setup(success(body)).client.setFavorite({ token: TOKEN, targetType: 'book', targetId: NOTE.bookId,
+      favorite: body.favorite }), error => error.code === 'INVALID_RESPONSE');
+  }
+});
+
+test('感悟加入总结严格校验关联与结果，取消保留用户修改后的独立副本', async () => {
+  const link = { entryId: ENTRY.id, active: true, linkedAt: ENTRY.createdAt, entryRevisionAtLink: 1, preserveOnCancel: false };
+  const entry = { ...ENTRY, origin: { type: 'reading-note', noteId: NOTE.id, bookId: NOTE.bookId,
+    bookTitle: '瓦尔登湖', noteSavedAt: NOTE.savedAt } };
+  const added = { note: { ...NOTE, revision: 2, summaryLink: link }, entry, outcome: 'added' };
+  const created = setup(success(added));
+  assert.deepEqual((await created.client.setNoteInSummary({ token: TOKEN, noteId: NOTE.id, enabled: true, expectedRevision: 1 })).data, added);
+  assert.equal(created.calls[0].url, ORIGIN + '/api/notes/' + NOTE.id + '/summary');
+  assert.deepEqual(JSON.parse(created.calls[0].init.body), { enabled: true, expectedRevision: 1 });
+  const preserved = { note: { ...NOTE, revision: 3, summaryLink: { ...link, active: false, preserveOnCancel: true } },
+    entry: { ...entry, revision: 2, text: '【虚构】用户改过的副本原文' }, outcome: 'preserved-edited' };
+  assert.deepEqual((await setup(success(preserved)).client.setNoteInSummary({ token: TOKEN, noteId: NOTE.id,
+    enabled: false, expectedRevision: 2 })).data, preserved);
+  for (const data of [{ ...added, outcome: 'removed' }, { ...added, entry: null },
+    { ...added, entry: { ...entry, origin: { ...entry.origin, noteId: 'other-note' } } }]) {
+    await assert.rejects(setup(success(data)).client.setNoteInSummary({ token: TOKEN, noteId: NOTE.id,
+      enabled: true, expectedRevision: 1 }), error => error.code === 'INVALID_RESPONSE');
+  }
+});
+
+test('采纳演示只发送四个确认字段，返回必须保留demo来源、原文版本及用户编辑的内容', async () => {
+  const input = { expectedRevision: 1, sourceTextVersion: 1, summary: '  【虚构】我核对后的演示总结。  ',
+    questions: ['【虚构】下一步做什么？'] };
+  const adoptedAnalysis = { source: 'demo', demoId: 'discussion-v1', sourceTextVersion: 1,
+    summary: input.summary, questions: input.questions, adoptedAt: ENTRY.createdAt };
+  const saved = { ...ENTRY, revision: 2, adoptedAnalysis };
+  const { client, calls } = setup(success(saved));
+  assert.deepEqual((await client.saveAdoptedDemo({ token: TOKEN, entryId: ENTRY.id, input })).data, saved);
+  assert.equal(calls[0].url, ORIGIN + '/api/entries/' + ENTRY.id + '/analysis');
+  assert.deepEqual(JSON.parse(calls[0].init.body), input);
+  assert.equal(calls[0].init.method, 'PATCH');
+  for (const analysis of [{ ...adoptedAnalysis, source: 'ai' }, { ...adoptedAnalysis, sourceTextVersion: 2 },
+    { ...adoptedAnalysis, summary: input.summary.trim() }, { ...adoptedAnalysis, userId: 'fictional-private' }]) {
+    await assert.rejects(setup(success({ ...saved, adoptedAnalysis: analysis })).client.saveAdoptedDemo({ token: TOKEN,
+      entryId: ENTRY.id, input }), error => error.code === 'INVALID_RESPONSE');
+  }
+});
+
+test('新账户写入接口在非法输入时不发送请求，感悟版本冲突不自动重试', async () => {
+  const { client, calls } = setup(success(NOTE));
+  for (const body of ['', ' ', '字'.repeat(1001), '\u0000原文', '\ud800']) {
+    await assert.rejects(client.createNote({ token: TOKEN, bookId: NOTE.bookId, body }), error => error.code === 'INVALID_INPUT');
+  }
+  await assert.rejects(client.getFavorites({ token: TOKEN, targetType: 'owner' }), error => error.code === 'INVALID_INPUT');
+  await assert.rejects(client.getBookNotes({ token: TOKEN, bookId: '' }), error => error.code === 'INVALID_INPUT');
+  await assert.rejects(client.deleteNote({ token: TOKEN, noteId: NOTE.id, expectedRevision: 0 }), error => error.code === 'INVALID_INPUT');
+  await assert.rejects(client.setFavorite({ token: TOKEN, targetType: 'book', targetId: NOTE.bookId, favorite: 'true' }), error => error.code === 'INVALID_INPUT');
+  await assert.rejects(client.setNoteInSummary({ token: TOKEN, noteId: NOTE.id, enabled: true, expectedRevision: '1' }), error => error.code === 'INVALID_INPUT');
+  await assert.rejects(client.saveAdoptedDemo({ token: TOKEN, entryId: ENTRY.id, input: {
+    expectedRevision: 1, sourceTextVersion: 1, summary: '【虚构】总结', questions: ['【虚构】问题'], source: 'ai',
+  } }), error => error.code === 'INVALID_INPUT');
+  assert.equal(calls.length, 0);
+  const conflict = setup(failure('VERSION_CONFLICT', 'fictional-private-error'), 409);
+  await assert.rejects(conflict.client.deleteNote({ token: TOKEN, noteId: NOTE.id, expectedRevision: 1 }),
+    error => error.code === 'VERSION_CONFLICT' && !error.message.includes('fictional-private-error'));
+  assert.equal(conflict.calls.length, 1);
+});
+
+test('云端接口30秒超时涵盖无响应fetch与正文，取消后不等待忽略signal的请求', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const fetchImpl of [() => new Promise(() => {}), async () => ({ status: 200,
+    headers: new Headers(), json: () => new Promise(() => {}) })]) {
+    const client = createPublicApiClient({ apiOrigin: ORIGIN, fetchImpl });
+    const pending = client.getFavorites({ token: TOKEN });
+    await Promise.resolve();
+    t.mock.timers.tick(30000);
+    await assert.rejects(pending, error => error.code === 'TIMEOUT');
+  }
+  const controller = new AbortController();
+  const client = createPublicApiClient({ apiOrigin: ORIGIN, fetchImpl: () => new Promise(() => {}) });
+  const pending = client.getBookNotes({ token: TOKEN, bookId: NOTE.bookId, signal: controller.signal });
+  controller.abort();
+  await assert.rejects(pending, error => error.code === 'ABORTED');
+});

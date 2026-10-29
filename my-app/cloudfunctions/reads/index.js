@@ -66,27 +66,35 @@ function createServer({ authenticate, read, write, allowedOrigin, logError = () 
       try { url = new URL(request.url, 'http://localhost'); } catch {
         throw new ApiError(400, 'INVALID_INPUT', '请求地址无效。');
       }
-      let kind, bookId, entryId;
+      let kind, bookId, entryId, noteId;
       if (url.pathname === '/api/entries') kind = 'entries';
       else if (url.pathname === '/api/favorites') kind = 'favorites';
       else {
-        const entryMatch = /^\/api\/entries\/([^/]+)$/.exec(url.pathname);
-        const noteMatch = /^\/api\/books\/([^/]+)\/notes$/.exec(url.pathname);
-        if (!entryMatch && !noteMatch) throw new ApiError(404, 'NOT_FOUND', '接口不存在。');
-        kind = entryMatch ? 'entry' : 'notes';
+        const routes = [
+          { pattern: /^\/api\/entries\/([^/]+)\/analysis$/, kind: 'entryAnalysis', key: 'entryId' },
+          { pattern: /^\/api\/entries\/([^/]+)$/, kind: 'entry', key: 'entryId' },
+          { pattern: /^\/api\/books\/([^/]+)\/notes$/, kind: 'notes', key: 'bookId' },
+          { pattern: /^\/api\/notes\/([^/]+)\/summary$/, kind: 'noteSummary', key: 'noteId' },
+          { pattern: /^\/api\/notes\/([^/]+)$/, kind: 'note', key: 'noteId' },
+        ];
+        const route = routes.find(item => item.pattern.test(url.pathname));
+        if (!route) throw new ApiError(404, 'NOT_FOUND', '接口不存在。');
+        kind = route.kind;
         let id;
-        try { id = decodeURIComponent((entryMatch || noteMatch)[1]); } catch {
+        try { id = decodeURIComponent(route.pattern.exec(url.pathname)[1]); } catch {
           throw new ApiError(400, 'INVALID_INPUT', '资源 ID 格式无效。');
         }
-        if (!id.trim() || id.length > (entryMatch ? 512 : 128) || /[\/\u0000-\u001f\u007f]/.test(id)
-          || (!entryMatch && /\s/.test(id))) {
+        if (!id.trim() || id.length > (route.key === 'bookId' ? 128 : 512) || /[\/\u0000-\u001f\u007f]/.test(id)
+          || (route.key === 'bookId' && /\s/.test(id))) {
           throw new ApiError(400, 'INVALID_INPUT', '资源 ID 格式无效。');
         }
-        if (entryMatch) entryId = id;
-        else bookId = id;
+        if (route.key === 'entryId') entryId = id;
+        else if (route.key === 'bookId') bookId = id;
+        else noteId = id;
       }
-      const methods = kind === 'entries' ? ['GET', 'POST']
-        : kind === 'entry' ? ['PATCH', 'DELETE'] : ['GET'];
+      const methods = kind === 'entries' || kind === 'notes' ? ['GET', 'POST']
+        : kind === 'entry' ? ['PATCH', 'DELETE'] : kind === 'favorites' ? ['GET', 'PATCH']
+          : kind === 'note' ? ['DELETE'] : ['PATCH'];
       writing = methods.includes(request.method) && request.method !== 'GET';
       if (!methods.includes(request.method)) {
         response.setHeader('Allow', methods.join(', '));
@@ -105,13 +113,13 @@ function createServer({ authenticate, read, write, allowedOrigin, logError = () 
         }
         expectedRevision = Number(revisionText);
       } else if (writing && url.search) {
-        throw new ApiError(400, 'INVALID_INPUT', '新增或修改日精进不接受查询参数。');
+        throw new ApiError(400, 'INVALID_INPUT', '新增或修改账户数据不接受查询参数。');
       }
       const ownerId = await authenticate(request.headers.authorization);
       let data;
       if (writing) {
         const body = jsonBody ? await readJson(request) : undefined;
-        data = await write({ ownerId, body, operation: request.method, entryId, expectedRevision,
+        data = await write({ kind, ownerId, body, operation: request.method, bookId, noteId, entryId, expectedRevision,
           timeZone: request.headers['x-client-time-zone'] });
       } else data = await read({ kind, ownerId, bookId, params: url.searchParams });
       const status = request.method === 'POST' ? 201 : 200;
@@ -121,7 +129,9 @@ function createServer({ authenticate, read, write, allowedOrigin, logError = () 
       if (writing) {
         try {
           logEvent({ requestId, method: request.method,
-            path: kind === 'entry' ? '/api/entries/:entryId' : '/api/entries', status,
+            path: ({ entries: '/api/entries', entry: '/api/entries/:entryId', favorites: '/api/favorites',
+              notes: '/api/books/:bookId/notes', note: '/api/notes/:noteId', noteSummary: '/api/notes/:noteId/summary',
+              entryAnalysis: '/api/entries/:entryId/analysis' })[kind], status,
             code: request.method === 'POST' ? 'CREATED' : request.method === 'PATCH' ? 'UPDATED' : 'DELETED' });
         } catch {}
       }
@@ -158,7 +168,7 @@ function start() {
     query,
     bookIds: new Set(catalog.books.map((book) => book.id)), cursorSecret: env.CURSOR_SECRET,
   });
-  const write = createWriter({ query });
+  const write = createWriter({ query, books: new Map(catalog.books.map(book => [book.id, book])) });
   const server = createServer({ authenticate, read, write, allowedOrigin,
     logError: (event) => console.error('业务请求失败。', event),
     logEvent: (event) => console.log('日精进写入成功。', event),

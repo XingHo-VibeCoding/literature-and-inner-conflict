@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { homeSections } from '../services/homeMock.js';
 import { createPublicApiClient } from '../services/publicApi.js';
-import { createAccountAuthClient } from '../services/accountAuth.js';
-import AccountPanel from '../components/AccountPanel.jsx';
+import { AccountAccess, useAccountSession } from '../components/AccountSession.jsx';
 import { useDetailsMotion } from '../components/usePanelMotion.js';
 import antiqueMap from '../assets/home/antique-map.webp';
 import journalBrush from '../assets/home/journal-brush.webp';
@@ -44,6 +43,13 @@ function RequestEvidence({ value }) {
 }
 
 export default function HomePage() {
+  const account = useAccountSession();
+  // 身份变更时重建私人工作区，旧请求、草稿和删除确认不能跨账户保留。
+  const workspaceKey = account.signedIn ? `account-${account.snapshot.version}` : 'guest';
+  return <HomeWorkspace key={workspaceKey} account={account} />;
+}
+
+function HomeWorkspace({ account }) {
   const recordMotion = useDetailsMotion();
   const apiOrigin = import.meta.env.VITE_API_ORIGIN || '';
   const apiSetup = useMemo(() => {
@@ -53,23 +59,14 @@ export default function HomePage() {
       return { client: null, error: error.message };
     }
   }, [apiOrigin]);
-  const accountSetup = useMemo(() => {
-    try {
-      return { client: createAccountAuthClient({ authOrigin: import.meta.env.VITE_AUTH_ORIGIN || '',
-        registrationOrigin: apiOrigin, registrationRequestOrigin: import.meta.env.DEV ? '' : apiOrigin }), error: '' };
-    } catch (error) {
-      return { client: null, error: error.message };
-    }
-  }, [apiOrigin]);
   const publicOrigin = apiOrigin.replace(/\/$/, '');
-  const tokenRef = useRef('');
+  const tokenRef = useRef(account.signedIn ? account.snapshot.token : '');
   const sessionVersion = useRef(0);
   const readController = useRef(null);
   const writeController = useRef(null);
   const writingRef = useRef(false);
   const loginController = useRef(null);
   const loginBusyRef = useRef(false);
-  const accountAttemptRef = useRef(null);
   const copyBusyRef = useRef(false);
   const deleteDialog = useRef(null);
   const deleteTrigger = useRef(null);
@@ -79,10 +76,7 @@ export default function HomePage() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginState, setLoginState] = useState({ status: 'idle', message: '', loginStatus: null, profileStatus: null, matched: null });
-  const [accountState, setAccountState] = useState({ status: 'idle', message: '' });
-  const [accountVerified, setAccountVerified] = useState(false);
-  const [accountResetVersion, setAccountResetVersion] = useState(0);
-  const [hasCredential, setHasCredential] = useState(false);
+  const [hasCredential, setHasCredential] = useState(() => account.signedIn && Boolean(account.snapshot.token));
   const [tokenInput, setTokenInput] = useState('');
   const [credentialError, setCredentialError] = useState('');
   const [readRequest, setReadRequest] = useState({ cursor: undefined, append: false, revision: 0 });
@@ -140,7 +134,7 @@ export default function HomePage() {
       ? { ...current, loadingMore: true, error: '', code: '' }
       : emptyView());
     // 未准备凭证时明确提示；接口返回 401 也不显示为空记录。
-    apiSetup.client.getEntries({ token: tokenRef.current, signal: controller.signal, limit: 20, cursor: readRequest.cursor }).then((result) => {
+    apiSetup.client.getEntries({ token: currentCredential(), signal: controller.signal, limit: 20, cursor: readRequest.cursor }).then((result) => {
       if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
       setView((current) => {
         const items = readRequest.append
@@ -159,8 +153,8 @@ export default function HomePage() {
   }, [apiSetup, readRequest]);
 
   useEffect(() => {
-    // 整页离开可能进入浏览器往返缓存，pagehide 时也要清除私人会话。
-    const hidePage = () => clearCredential();
+    // 整页离开时清除私人界面与临时凭证；账户持久会话由全站容器管理。
+    const hidePage = () => clearCredential({ keepAccount: true });
     window.addEventListener('pagehide', hidePage);
     return () => {
       window.removeEventListener('pagehide', hidePage);
@@ -171,6 +165,11 @@ export default function HomePage() {
       loginController.current?.abort();
     };
   }, []);
+
+  useEffect(() => account.session.subscribe(() => {
+    // 同步作废旧按钮和请求，不能等 React 重挂后才阻止旧身份的写入。
+    clearCredential({ keepAccount: true });
+  }), [account.session]);
 
   function clearDeleteConfirmation() {
     // 同步作废旧按钮持有的确认，避免取消或切换会话后的迟到操作误删。
@@ -200,7 +199,7 @@ export default function HomePage() {
   }
 
   function expireSession(error) {
-    if ((error.httpStatus !== 401 && error.code !== 'UNAUTHENTICATED') || !tokenRef.current) return false;
+    if ((error.httpStatus !== 401 && error.code !== 'UNAUTHENTICATED') || !currentCredential()) return false;
     sessionVersion.current += 1;
     readController.current?.abort();
     writeController.current?.abort();
@@ -208,11 +207,8 @@ export default function HomePage() {
     writingRef.current = loginBusyRef.current = copyBusyRef.current = false;
     tokenRef.current = '';
     setHasCredential(false);
-    setAccountVerified(false);
-    setAccountResetVersion((version) => version + 1);
-    accountAttemptRef.current = null;
     setTestText(makeTestText());
-    setAccountState({ status: 'error', message: '登录状态已失效，请重新登录。' });
+    if (account.signedIn) account.session.invalidate('登录状态已失效，请重新登录。');
     setLoginPassword('');
     setTokenInput('');
     setCopyState({ status: 'idle', message: '' });
@@ -223,58 +219,20 @@ export default function HomePage() {
     return true;
   }
 
-  async function authenticateAccount({ mode, username, password }) {
-    if (writingRef.current || loginBusyRef.current) return;
-    if (!accountSetup.client || !apiSetup.client) {
-      setAccountState({ status: 'error', message: accountSetup.error || '记录服务暂不可用，请稍后再试。' });
-      return;
-    }
-    sessionVersion.current += 1;
-    const currentSession = sessionVersion.current;
-    readController.current?.abort();
-    loginController.current?.abort();
-    writeController.current?.abort();
-    const controller = new AbortController();
-    loginController.current = controller;
-    loginBusyRef.current = true;
-    tokenRef.current = '';
-    setTokenInput('');
-    setHasCredential(false);
-    setAccountVerified(false);
-    accountAttemptRef.current = mode;
-    setTestText(makeTestText());
-    setCredentialError('');
-    setLoginPassword('');
-    setLoginState({ status: 'idle', message: '', loginStatus: null, profileStatus: null, matched: null });
-    resetMutations();
-    setCopyState({ status: 'idle', message: '' });
-    setWriteReceipt(null);
-    setWriteState({ status: 'idle', message: '', httpStatus: null, requestId: null });
-    setView(emptyView('unauthorized'));
-    setAccountState({ status: 'loading', message: mode === 'register' ? '正在创建账号并登录…' : '正在登录并验证身份…' });
-    try {
-      const operation = mode === 'register' ? accountSetup.client.signUp : accountSetup.client.signIn;
-      const pending = operation({ username, password, signal: controller.signal });
-      username = password = null;
-      const result = await pending;
-      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
-      tokenRef.current = result.token;
-      setHasCredential(true);
-      setAccountVerified(true);
-      setAccountState({ status: 'success', message: result.registered ? '注册成功，已登录。正在读取你的记录。' : '已登录，正在读取你的记录。' });
-      refreshEntries();
-    } catch (error) {
-      if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
-      setAccountState({ status: 'error', message: error.code ? error.message : '暂时未能完成，请稍后重试。', registered: error.registered === true });
-    } finally {
-      username = password = null;
-      if (currentSession === sessionVersion.current) { loginBusyRef.current = false; accountAttemptRef.current = null; }
-    }
+  function currentCredential() {
+    if (!account.signedIn) return tokenRef.current;
+    // 请求入口检查到期时间；渲染阶段只读快照，避免渲染中触发跨组件更新。
+    const token = account.session.getToken();
+    return account.session.getSnapshot().version === account.snapshot.version ? token : '';
+  }
+
+  function sharedAccountActive() {
+    return ['signedIn', 'restoring', 'authenticating'].includes(account.session.getSnapshot().status);
   }
 
   function prepareCredential(event) {
     event.preventDefault();
-    if (writingRef.current || loginBusyRef.current) return;
+    if (writingRef.current || loginBusyRef.current || sharedAccountActive()) return;
     const token = tokenInput.trim();
     setTokenInput('');
     if (!token || /\s/.test(token)) {
@@ -292,9 +250,6 @@ export default function HomePage() {
     setLoginState({ status: 'idle', message: '', loginStatus: null, profileStatus: null, matched: null });
     tokenRef.current = token;
     setTestText(makeTestText());
-    setAccountVerified(false);
-    setAccountResetVersion((version) => version + 1);
-    setAccountState({ status: 'idle', message: '' });
     setHasCredential(true);
     setCredentialError('');
     setWriteReceipt(null);
@@ -303,9 +258,8 @@ export default function HomePage() {
     refreshEntries();
   }
 
-  function clearCredential() {
-    const registrationUnconfirmed = accountAttemptRef.current === 'register' && loginBusyRef.current;
-    accountAttemptRef.current = null;
+  function clearCredential({ keepAccount = false } = {}) {
+    if (account.signedIn && !keepAccount) account.session.signOut();
     sessionVersion.current += 1;
     resetMutations();
     copyBusyRef.current = false;
@@ -321,11 +275,6 @@ export default function HomePage() {
     tokenRef.current = '';
     setTokenInput('');
     setHasCredential(false);
-    setAccountVerified(false);
-    setAccountResetVersion((version) => version + 1);
-    setAccountState(registrationUnconfirmed
-      ? { status: 'error', message: '注册已停止等待，结果尚未确认。请先尝试登录，勿重复注册。', suggestLogin: true }
-      : { status: 'idle', message: '' });
     setTestText(makeTestText());
     setCredentialError('');
     setView(emptyView('unauthorized'));
@@ -337,7 +286,7 @@ export default function HomePage() {
   async function loginLocally(event) {
     event.preventDefault();
     // 只在开发环境加载本地登录服务；生产构建移除此分支与认证请求地址。
-    if (!import.meta.env.DEV || writingRef.current || loginBusyRef.current || !apiSetup.client) return;
+    if (!import.meta.env.DEV || writingRef.current || loginBusyRef.current || sharedAccountActive() || !apiSetup.client) return;
     const username = loginUsername.trim();
     const password = loginPassword;
     setLoginPassword('');
@@ -357,10 +306,7 @@ export default function HomePage() {
     setView(emptyView('unauthorized'));
     setWriteReceipt(null);
     setWriteState({ status: 'idle', message: '', httpStatus: null, requestId: null });
-    setAccountVerified(false);
     setTestText(makeTestText());
-    setAccountResetVersion((version) => version + 1);
-    setAccountState({ status: 'idle', message: '' });
     setLoginState({ status: 'loading', message: '正在登录并核对测试用户身份…', loginStatus: null, profileStatus: null, matched: null });
     refreshEntries();
     try {
@@ -385,7 +331,7 @@ export default function HomePage() {
 
   async function copyTestCredential() {
     // 用户显式点击才临时复制，成功读库前不能复制短期凭证。
-    if (!import.meta.env.DEV || !hasCredential || !tokenRef.current || view.httpStatus !== 200
+    if (!import.meta.env.DEV || !hasCredential || !currentCredential() || view.httpStatus !== 200
       || !['content', 'empty'].includes(view.status) || view.loadingMore
       || writingRef.current || loginBusyRef.current || copyBusyRef.current) return;
     const currentSession = sessionVersion.current;
@@ -413,7 +359,7 @@ export default function HomePage() {
     let total;
     let result;
     do {
-      result = await apiSetup.client.getEntries({ token: tokenRef.current, signal: controller.signal, limit: 20, cursor });
+      result = await apiSetup.client.getEntries({ token: currentCredential(), signal: controller.signal, limit: 20, cursor });
       if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
       if (total !== undefined && total !== result.data.total) throw new Error('读回期间记录总数发生变化，请仅重新读取核对。');
       total = result.data.total;
@@ -448,7 +394,7 @@ export default function HomePage() {
 
   async function writeTest(event) {
     event.preventDefault();
-    if (writingRef.current || loginBusyRef.current || !apiSetup.client || !tokenRef.current) return;
+    if (writingRef.current || loginBusyRef.current || !apiSetup.client || !currentCredential()) return;
     clearDeleteConfirmation();
     if (!testText.trim()) {
       setWriteState({ status: 'error', message: '测试原文不能为空；草稿已保留。', httpStatus: null, requestId: null });
@@ -463,7 +409,7 @@ export default function HomePage() {
     let receipt = null;
     try {
       const input = { entryDate: localDate(), text: testText };
-      const result = await apiSetup.client.createEntry({ token: tokenRef.current, input, signal: controller.signal });
+      const result = await apiSetup.client.createEntry({ token: currentCredential(), input, signal: controller.signal });
       if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
       if (result.httpStatus !== 201) throw Object.assign(new Error('未取得契约规定的 HTTP 201，不能确认写入成功。草稿已保留。'), requestEvidence(result));
       receipt = { entry: result.data, input, ...requestEvidence(result) };
@@ -485,7 +431,7 @@ export default function HomePage() {
   }
 
   async function verifyWriteAgain() {
-    if (writingRef.current || loginBusyRef.current || !writeReceipt || !apiSetup.client || !tokenRef.current) return;
+    if (writingRef.current || loginBusyRef.current || !writeReceipt || !apiSetup.client || !currentCredential()) return;
     clearDeleteConfirmation();
     writingRef.current = true;
     const controller = new AbortController();
@@ -542,7 +488,7 @@ export default function HomePage() {
 
   function requestDelete() {
     if (writingRef.current || loginBusyRef.current || reading || !selectedEntry || !apiSetup.client
-      || !tokenRef.current || mutationReceipt || deleteConfirmationRef.current) return;
+      || !currentCredential() || mutationReceipt || deleteConfirmationRef.current) return;
     const confirmation = { entry: selectedEntry, session: sessionVersion.current };
     deleteConfirmationRef.current = confirmation;
     setDeleteConfirmation(confirmation);
@@ -557,7 +503,7 @@ export default function HomePage() {
 
   async function mutateEntry(operation, event, confirmedTarget) {
     event?.preventDefault();
-    if (writingRef.current || loginBusyRef.current || reading || !selectedEntry || !apiSetup.client || !tokenRef.current || mutationReceipt) return;
+    if (writingRef.current || loginBusyRef.current || reading || !selectedEntry || !apiSetup.client || !currentCredential() || mutationReceipt) return;
     if (operation === 'DELETE' && (!confirmedTarget || deleteConfirmationRef.current !== confirmedTarget
       || confirmedTarget.session !== sessionVersion.current || confirmedTarget.entry.id !== selectedEntry.id
       || confirmedTarget.entry.revision !== selectedEntry.revision)) {
@@ -578,8 +524,8 @@ export default function HomePage() {
     setMutationState({ status: 'writing', message: operation === 'PATCH' ? '正在修改云端记录…' : '正在删除云端记录…' });
     try {
       const result = operation === 'PATCH'
-        ? await apiSetup.client.updateEntry({ token: tokenRef.current, entryId: before.id, input, signal: controller.signal })
-        : await apiSetup.client.deleteEntry({ token: tokenRef.current, entryId: before.id, expectedRevision: before.revision, signal: controller.signal });
+        ? await apiSetup.client.updateEntry({ token: currentCredential(), entryId: before.id, input, signal: controller.signal })
+        : await apiSetup.client.deleteEntry({ token: currentCredential(), entryId: before.id, expectedRevision: before.revision, signal: controller.signal });
       if (controller.signal.aborted || currentSession !== sessionVersion.current) return;
       receipt = { operation, before, input, entry: result.data, ...requestEvidence(result) };
       setMutationReceipt(receipt);
@@ -599,7 +545,7 @@ export default function HomePage() {
   }
 
   async function verifyMutationAgain() {
-    if (writingRef.current || loginBusyRef.current || !mutationReceipt || !apiSetup.client || !tokenRef.current) return;
+    if (writingRef.current || loginBusyRef.current || !mutationReceipt || !apiSetup.client || !currentCredential()) return;
     clearDeleteConfirmation();
     writingRef.current = true;
     readController.current?.abort();
@@ -618,10 +564,11 @@ export default function HomePage() {
 
   const latest = view.items[0];
   const analysis = latest?.adoptedAnalysis;
-  const completeAnalysis = analysis && analysis.source === 'ai' && typeof analysis.summary === 'string'
+  const completeAnalysis = analysis && ['ai', 'demo'].includes(analysis.source) && typeof analysis.summary === 'string'
     && Array.isArray(analysis.questions) && analysis.questions.every((question) => typeof question === 'string');
   const reading = view.status === 'loading' || view.loadingMore;
-  const loginBusy = loginState.status === 'loading' || accountState.status === 'loading';
+  const loginBusy = loginState.status === 'loading' || account.busy;
+  const temporaryLoginDisabled = loginBusy || account.signedIn;
   const canCopyCredential = hasCredential && view.httpStatus === 200 && ['content', 'empty'].includes(view.status);
   const writeBusy = writeState.status === 'writing' || writeState.status === 'verifying'
     || mutationState.status === 'writing' || mutationState.status === 'verifying';
@@ -637,9 +584,9 @@ export default function HomePage() {
 
       </section>
 
-      <AccountPanel state={accountState} disabled={writeBusy || loginBusy}
-        signedIn={accountVerified} resetVersion={accountResetVersion}
-        onSubmit={authenticateAccount} onCancel={clearCredential} onLogout={clearCredential} />
+      <AccountAccess disabled={writeBusy || loginState.status === 'loading'}
+        onBeforeSubmit={() => clearCredential({ keepAccount: true })}
+        onCancel={() => clearCredential({ keepAccount: true })} />
 
       <div className="home-workspace">
         <section className={`home-state-card${!latest ? ' home-state-empty' : ''}`} aria-labelledby="home-state-title">
@@ -651,7 +598,7 @@ export default function HomePage() {
           {!latest && <img className="home-map" src={antiqueMap} alt="" aria-hidden="true" decoding="async" />}
           <div className="home-state-body" aria-live="polite" aria-busy={reading}>
             {completeAnalysis && latest ? <div className="home-cloud-analysis">
-              <p className="home-summary-label">AI 解读 · 已采纳，独立于用户原文</p>
+              <p className="home-summary-label">{analysis.source === 'demo' ? '固定演示' : 'AI 解读'} · 已采纳，独立于用户原文</p>
               <p className="home-summary">{analysis.summary}</p>
               <ul>{analysis.questions.map((question, index) => <li key={index}>{question}</li>)}</ul>
             </div> : <div className="home-guidance" aria-label="本站原创寄语">
@@ -689,7 +636,7 @@ export default function HomePage() {
                 </>}
               </div>
               <button className="home-cloud-refresh" type="button" onClick={refreshAll} disabled={reading || writeBusy || loginBusy}>刷新状态与云端记录</button>
-              <p className="home-cloud-refresh-note">刷新此处会重新读取记录；整页刷新或离开首页后，需要重新验证登录状态。</p>
+              <p className="home-cloud-refresh-note">刷新此处会重新读取记录；账户登录在切换页面时保持，刷新或重新打开后会自动核验尚未过期的登录状态。</p>
             </div>
           </details>
         </section>
@@ -766,24 +713,25 @@ export default function HomePage() {
               <p className="home-cloud-small">此入口仅用于本地联调，不会进入公网部署。输入现有测试账号，登录后先核对测试 UID，一致才读取私人数据。</p>
               <form onSubmit={loginLocally} autoComplete="off">
                 <label htmlFor="cloud-test-username">测试账号用户名</label>
-                <input id="cloud-test-username" type="text" value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} autoComplete="off" spellCheck="false" disabled={writeBusy || loginBusy} />
+                <input id="cloud-test-username" type="text" value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} autoComplete="off" spellCheck="false" disabled={writeBusy || temporaryLoginDisabled} />
                 <label htmlFor="cloud-test-password">测试账号密码</label>
-                <input id="cloud-test-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="off" aria-describedby="cloud-login-help" disabled={writeBusy || loginBusy} />
+                <input id="cloud-test-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="off" aria-describedby="cloud-login-help" disabled={writeBusy || temporaryLoginDisabled} />
                 <p id="cloud-login-help" className="home-cloud-small">提交后立即清空密码。账号密码与令牌不进入链接、浏览器存储、错误提示或日志；令牌仅暂存在本页内存。</p>
-                <div className="home-cloud-actions"><button type="submit" disabled={!apiSetup.client || writeBusy || loginBusy || !loginUsername.trim() || !loginPassword}>{loginBusy ? '正在登录并核验…' : '本地登录并核验身份'}</button></div>
+                <div className="home-cloud-actions"><button type="submit" disabled={!apiSetup.client || writeBusy || temporaryLoginDisabled || !loginUsername.trim() || !loginPassword}>{loginBusy ? '正在登录并核验…' : '本地登录并核验身份'}</button></div>
               </form>
               {loginState.message && <div className={loginState.status === 'error' ? 'home-cloud-error' : 'home-cloud-small'} role={loginState.status === 'error' ? 'alert' : 'status'}>
                 <p>{loginState.message}</p>
                 <p className="home-cloud-evidence"><span>登录 HTTP：{loginState.loginStatus ?? '尚未取得响应'}</span><span>身份核验 HTTP：{loginState.profileStatus ?? '尚未取得响应'}</span><span>测试 UID 一致：{loginState.matched === null ? '尚未核验' : String(loginState.matched)}</span></p>
               </div>}
             </div>}
+            {account.signedIn && <p className="home-cloud-small">当前使用正式账户。使用临时测试身份前，请先退出登录。</p>}
             <form onSubmit={prepareCredential}>
               <label htmlFor="cloud-access-token">已有会话的短期 access_token</label>
-              <input id="cloud-access-token" type="password" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} autoComplete="off" spellCheck="false" aria-describedby="cloud-token-help" disabled={writeBusy || loginBusy} />
+              <input id="cloud-access-token" type="password" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} autoComplete="off" spellCheck="false" aria-describedby="cloud-token-help" disabled={writeBusy || temporaryLoginDisabled} />
               <p id="cloud-token-help" className="home-cloud-small">填写单行用户令牌。提交后输入框立即清空；请勿填写账号密码或管理员 API Key。</p>
               {credentialError && <p className="home-cloud-error" role="alert">{credentialError}</p>}
               <div className="home-cloud-actions">
-                <button type="submit" disabled={!apiSetup.client || writeBusy || loginBusy || !tokenInput.trim()}>准备凭证并读取</button>
+                <button type="submit" disabled={!apiSetup.client || writeBusy || temporaryLoginDisabled || !tokenInput.trim()}>准备凭证并读取</button>
                 <button type="button" onClick={clearCredential}>清除凭证与私人数据</button>
               </div>
             </form>

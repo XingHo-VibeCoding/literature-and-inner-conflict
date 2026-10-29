@@ -20,6 +20,8 @@ export default function AccountPanel({
 }) {
   const id = useId();
   const usernameRef = useRef(null);
+  const passwordRef = useRef(null);
+  const confirmationRef = useRef(null);
   const triggerRef = useRef(null);
   const pendingRef = useRef(false);
   const attemptVersionRef = useRef(0);
@@ -81,6 +83,26 @@ export default function AccountPanel({
       setErrorField('');
     }
   }, [signedIn]);
+
+  useEffect(() => {
+    const hide = () => {
+      // 页面可能进入往返缓存；先同步清空 DOM，再清掉受控状态与迟到提交。
+      attemptVersionRef.current += 1;
+      pendingRef.current = false;
+      for (const ref of [usernameRef, passwordRef, confirmationRef]) {
+        if (ref.current) ref.current.value = '';
+      }
+      setSubmitting(false);
+      setUsername('');
+      setPassword('');
+      setConfirmation('');
+      setExpanded(false);
+      setLocalError('');
+      setErrorField('');
+    };
+    window.addEventListener('pagehide', hide);
+    return () => window.removeEventListener('pagehide', hide);
+  }, []);
 
   function clearError() {
     setLocalError('');
@@ -180,6 +202,7 @@ export default function AccountPanel({
       </button>
     </div>
     {!expanded && errorMessage && <p className="home-account-error" role="alert">{errorMessage}</p>}
+    {!expanded && statusMessage && <p className="home-account-status" role="status" aria-live="polite">{statusMessage}</p>}
     {expanded && <div className="home-account-panel" id={id + '-form'}>
       <div className="home-account-modes" role="group" aria-label="选择登录或注册">
         <button type="button" aria-pressed={!isRegister} disabled={unavailable}
@@ -202,7 +225,7 @@ export default function AccountPanel({
         </div>
         <div className="home-account-field">
           <label htmlFor={id + '-password'}>密码</label>
-          <input id={id + '-password'} name="password" type="password"
+          <input ref={passwordRef} id={id + '-password'} name="password" type="password"
             value={password} autoComplete={isRegister ? 'new-password' : 'current-password'}
             maxLength={isRegister ? 32 : 128} required disabled={unavailable}
             aria-invalid={errorField === 'password'}
@@ -215,7 +238,7 @@ export default function AccountPanel({
         </div>
         {isRegister && <div className="home-account-field">
           <label htmlFor={id + '-confirmation'}>确认密码</label>
-          <input id={id + '-confirmation'} name="password-confirmation" type="password"
+          <input ref={confirmationRef} id={id + '-confirmation'} name="password-confirmation" type="password"
             value={confirmation} autoComplete="new-password" maxLength={32} required
             disabled={unavailable} aria-invalid={errorField === 'confirmation'}
             aria-describedby={errorField === 'confirmation' ? id + '-error' : undefined}
